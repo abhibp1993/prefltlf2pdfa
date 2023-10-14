@@ -333,8 +333,12 @@ def construct_pref_graph(product_dfa, dfa_list, preorder):
             graph["nodes"][str(cls)] = {u}
             graph["edges"][str(cls)] = set()
 
-    graph["nodes"][str((0, 0, 0))] = set(product_dfa["states"]) - set(product_dfa["final_states"])
-    graph["edges"][str((0, 0, 0))] = set()
+    for u in product_dfa["final_states"]:
+        state = product_dfa["states"][u]['state']
+        graph["nodes"][str((0,) * len(state))] = set(product_dfa["states"]) - set(product_dfa["final_states"])
+        graph["edges"][str((0,) * len(state))] = set()
+        break
+
 
     # Construct edges using mp_semantics.
     for source, target in itertools.product(graph["nodes"].keys(), graph["nodes"].keys()):
@@ -432,7 +436,10 @@ def dfa_to_png(dfa, file):
     # Create graph for underlying product DFA
     dot_dfa = pygraphviz.AGraph(directed=True)
     for n in dfa["states"]:
-        dot_dfa.add_node(n, **{"label": str(n)})
+        if n in dfa["final_states"]:
+            dot_dfa.add_node(n, **{"label": str(n), "shape": "doublecircle"})
+        else:
+            dot_dfa.add_node(n, **{"label": str(n)})
     dot_dfa.add_node("init", **{"label": "", "shape": "plaintext"})
 
     for u, d in dfa["transitions"].items():
