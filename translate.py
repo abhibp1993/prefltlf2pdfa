@@ -176,6 +176,10 @@ def translate(prefltlf_model, **kwargs):
         dfa_list.append(dfa)
         logger.info(f"DFA({f}): \n{pprint.pformat(dfa)}")
 
+    for i in range(len(dfa_list)):
+        if kwargs.get("debug", False):
+            dfa_to_png(dfa_list[i], f"dfa_{i}.png")
+
     product_dfa = union_product(*dfa_list)
     logger.info(f"Union product DFA: \n{pprint.pformat(product_dfa)}")
 
@@ -191,10 +195,10 @@ def translate(prefltlf_model, **kwargs):
     pdfa["pref_graph"] = pref_graph
     pdfa["alphabet"] = atoms
 
-    if kwargs.get("debug", False):
-        return pdfa, dfa_list, product_dfa
-    else:
-        return pdfa
+    # if kwargs.get("debug", False):
+    #     return pdfa, dfa_list, product_dfa
+    # else:
+    return pdfa
 
 
 def ltlf2dfa(ltlf_formula):
@@ -422,6 +426,23 @@ def pdfa_to_png(pdfa, file):
 
     dot_dfa.draw(os.path.join(parent, f"{stem}_dfa{suffix}"))
     dot_pref.draw(os.path.join(parent, f"{stem}_pref_graph{suffix}"))
+
+
+def dfa_to_png(dfa, file):
+    # Create graph for underlying product DFA
+    dot_dfa = pygraphviz.AGraph(directed=True)
+    for n in dfa["states"]:
+        dot_dfa.add_node(n, **{"label": str(n)})
+    dot_dfa.add_node("init", **{"label": "", "shape": "plaintext"})
+
+    for u, d in dfa["transitions"].items():
+        for label, v in d.items():
+            dot_dfa.add_edge(u, v, **{"label": label})
+    dot_dfa.add_edge("init", dfa["init_state"], **{"label": ""})
+    dot_dfa.layout(prog="dot")
+
+    # Generate graphs
+    dot_dfa.draw(file)
 
 
 # =================================================================================== #

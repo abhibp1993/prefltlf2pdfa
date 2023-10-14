@@ -52,6 +52,7 @@ def parse_args():
 
     # Set up logger
     logger.remove()
+    debug = args_.verbosity == "DEBUG"
     if args_.verbosity in ["DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"]:
         logger.add(sys.stdout, level=args_.verbosity)
 
@@ -59,16 +60,16 @@ def parse_args():
         logger.add(args_.logfile, level=args_.loglevel)
 
     # Return other arguments
-    return args_.formula_file, args_.output, args_.png, args_.ifiles
+    return args_.formula_file, args_.output, args_.png, args_.ifiles, debug
 
 
 def main(args):
-    formula_file, output_file, png_file, ifiles = args
+    formula_file, output_file, png_file, ifiles, debug = args
 
     # Load formula
     formula = parse_prefltlf(formula_file)
 
-    logger.info(f"Formula: \n{pprint.pformat(formula)}")
+    logger.info(f"Formula: \n{pprint.pformat({(str(a), str(b), str(c)) for (a, b, c) in formula})}")
     if ifiles:
         with open(os.path.join(ifiles, "formula.txt"), 'w') as f:
             f.write("prefltlf\n")
@@ -98,7 +99,7 @@ def main(args):
                 f.write(",".join((str(e) for e in element)) + "\n")
 
     # Translate to PDFA
-    pdfa = translate(model)
+    pdfa = translate(model, **{"debug": debug})
 
     # Stop timer
     end_time = time.time()
