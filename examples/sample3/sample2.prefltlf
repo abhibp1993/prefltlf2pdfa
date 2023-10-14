@@ -1,0 +1,6 @@
+prefltlf
+>, F(a), F(b)
+>=, F(a), F(c)
+>=, F(a), !F(a)
+>=, F(b), !F(b)
+>=, F(c), !F(c)

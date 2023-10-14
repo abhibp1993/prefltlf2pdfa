@@ -99,7 +99,7 @@ def main(args):
                 f.write(",".join((str(e) for e in element)) + "\n")
 
     # Translate to PDFA
-    pdfa = translate(model, **{"debug": debug})
+    pdfa = translate(model, **{"debug": debug, "ifiles": ifiles})
 
     # Stop timer
     end_time = time.time()

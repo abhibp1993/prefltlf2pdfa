@@ -178,7 +178,7 @@ def translate(prefltlf_model, **kwargs):
 
     for i in range(len(dfa_list)):
         if kwargs.get("debug", False):
-            dfa_to_png(dfa_list[i], f"dfa_{i}.png")
+            dfa_to_png(dfa_list[i], os.path.join(kwargs.get("ifiles", os.getcwd()), f"dfa_{i}.png"))
 
     product_dfa = union_product(*dfa_list)
     logger.info(f"Union product DFA: \n{pprint.pformat(product_dfa)}")
@@ -327,7 +327,7 @@ def construct_pref_graph(product_dfa, dfa_list, preorder):
         mp_outcomes = get_mp_outcomes(outcomes, preorder)
         logger.debug(f"get_mp_outcomes({outcomes}, {preorder})={mp_outcomes}")
         cls = tuple(1 if i in mp_outcomes else 0 for i in range(len(state)))
-        if cls in graph["nodes"]:
+        if str(cls) in graph["nodes"]:
             graph["nodes"][str(cls)].add(u)
         else:
             graph["nodes"][str(cls)] = {u}
