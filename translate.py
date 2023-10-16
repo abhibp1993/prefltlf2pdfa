@@ -162,12 +162,14 @@ def transitive_closure(a):
 # TRANSLATE FORMULA TO PDFA
 # =================================================================================== #
 
-def translate(prefltlf_model, **kwargs):
+def translate(prefltlf_model, semantics, **kwargs):
     """
     Translates PrefLTLf formula to Preference Deterministic Finite Automaton (PDFA).
 
     :param prefltlf_model: (Tuple[list, list, list]) An indexed preference model: tuple of (atoms, phi, preorder).
-    :return:
+    :param semantics: (function) A function with signature (preorder, source_node, target_node) -> bool.
+        The function returns True if target_node is strictly preferred to source_node, and False otherwise.
+    :return: (dict) A PDFA.
     """
     atoms, phi, preorder = prefltlf_model
     dfa_list = list()
@@ -183,7 +185,7 @@ def translate(prefltlf_model, **kwargs):
     product_dfa = union_product(*dfa_list)
     logger.info(f"Union product DFA: \n{pprint.pformat(product_dfa)}")
 
-    pref_graph = construct_pref_graph(product_dfa, dfa_list, preorder)
+    pref_graph = construct_pref_graph(product_dfa, dfa_list, preorder, semantics)
     logger.info(f"Preference graph: \n{pprint.pformat(pref_graph)}")
 
     if kwargs.get("debug", False):
@@ -195,9 +197,6 @@ def translate(prefltlf_model, **kwargs):
     pdfa["pref_graph"] = pref_graph
     pdfa["alphabet"] = atoms
 
-    # if kwargs.get("debug", False):
-    #     return pdfa, dfa_list, product_dfa
-    # else:
     return pdfa
 
 
@@ -295,6 +294,51 @@ def get_mp_outcomes(outcomes, preorder):
     return {f for f in outcomes if not any((t, f) in preorder for t in outcomes - {f})}  # no formula in (sat - f) is preferred to f
 
 
+def construct_pref_graph(product_dfa, dfa_list, preorder, semantics):
+    # Initialize preference graph
+    graph = dict()
+    graph["nodes"] = dict()
+    graph["edges"] = dict()
+
+    # Create partition and add nodes
+    # classes = dict()
+    for u in product_dfa["final_states"]:
+        state = product_dfa["states"][u]['state']
+        outcomes = set(i if state[i] in dfa_list[i]["final_states"] else 0 for i in range(len(state)))
+
+        mp_outcomes = outcomes
+        if semantics in [semantics_mp_forall_exists, semantics_mp_exists_forall, semantics_mp_forall_forall]:
+            mp_outcomes = get_mp_outcomes(outcomes, preorder)
+
+        logger.debug(f"get_mp_outcomes({outcomes}, {preorder})={mp_outcomes}")
+
+        cls = tuple(1 if i in mp_outcomes else 0 for i in range(len(state)))
+        if str(cls) in graph["nodes"]:
+            graph["nodes"][str(cls)].add(u)
+        else:
+            graph["nodes"][str(cls)] = {u}
+            graph["edges"][str(cls)] = set()
+
+    for u in product_dfa["final_states"]:
+        state = product_dfa["states"][u]['state']
+        graph["nodes"][str((0,) * len(state))] = set(product_dfa["states"]) - set(product_dfa["final_states"])
+        graph["edges"][str((0,) * len(state))] = set()
+        break
+
+    # Construct edges using mp_semantics.
+    for source, target in itertools.product(graph["nodes"].keys(), graph["nodes"].keys()):
+        source_tuple = ast.literal_eval(source)
+        target_tuple = ast.literal_eval(target)
+        if semantics(preorder, source_tuple, target_tuple):
+            graph["edges"][source].add(target)
+
+    return graph
+
+
+# =================================================================================== #
+# SEMANTICS
+# =================================================================================== #
+
 def mp_semantics(preorder, source, target):
     sat_source = {i for i in range(len(source)) if source[i] == 1}
     sat_target = {i for i in range(len(target)) if target[i] == 1}
@@ -313,41 +357,70 @@ def mp_semantics(preorder, source, target):
     return True
 
 
-def construct_pref_graph(product_dfa, dfa_list, preorder):
-    # Initialize preference graph
-    graph = dict()
-    graph["nodes"] = dict()
-    graph["edges"] = dict()
+def semantics_forall_exists(preorder, source, target):
+    sat_source = {i for i in range(len(source)) if source[i] == 1}
+    sat_target = {i for i in range(len(target)) if target[i] == 1}
 
-    # Create partition and add nodes
-    # classes = dict()
-    for u in product_dfa["final_states"]:
-        state = product_dfa["states"][u]['state']
-        outcomes = set(i if state[i] in dfa_list[i]["final_states"] else 0 for i in range(len(state)))
-        mp_outcomes = get_mp_outcomes(outcomes, preorder)
-        logger.debug(f"get_mp_outcomes({outcomes}, {preorder})={mp_outcomes}")
-        cls = tuple(1 if i in mp_outcomes else 0 for i in range(len(state)))
-        if str(cls) in graph["nodes"]:
-            graph["nodes"][str(cls)].add(u)
-        else:
-            graph["nodes"][str(cls)] = {u}
-            graph["edges"][str(cls)] = set()
+    # Force empty set to be indifferent to each other. Required for preference graph to be preorder.
+    if sat_source == sat_target == set():
+        return True
 
-    for u in product_dfa["final_states"]:
-        state = product_dfa["states"][u]['state']
-        graph["nodes"][str((0,) * len(state))] = set(product_dfa["states"]) - set(product_dfa["final_states"])
-        graph["edges"][str((0,) * len(state))] = set()
-        break
+    if sat_target == set():
+        return False
+
+    for alpha_to in sat_target:
+        if not any((alpha_to, alpha_from) in preorder for alpha_from in sat_source):
+            return False
+
+    return True
 
 
-    # Construct edges using mp_semantics.
-    for source, target in itertools.product(graph["nodes"].keys(), graph["nodes"].keys()):
-        source_tuple = ast.literal_eval(source)
-        target_tuple = ast.literal_eval(target)
-        if mp_semantics(preorder, source_tuple, target_tuple):
-            graph["edges"][source].add(target)
+def semantics_exists_forall(preorder, source, target):
+    sat_source = {i for i in range(len(source)) if source[i] == 1}
+    sat_target = {i for i in range(len(target)) if target[i] == 1}
 
-    return graph
+    # Force empty set to be indifferent to each other. Required for preference graph to be preorder.
+    if sat_source == sat_target == set():
+        return True
+
+    if sat_target == set():
+        return False
+
+    for alpha_from in sat_source:
+        if not any((alpha_to, alpha_from) in preorder for alpha_to in sat_target):
+            return False
+
+    return True
+
+
+def semantics_forall_forall(preorder, source, target):
+    sat_source = {i for i in range(len(source)) if source[i] == 1}
+    sat_target = {i for i in range(len(target)) if target[i] == 1}
+
+    # Force empty set to be indifferent to each other. Required for preference graph to be preorder.
+    if sat_source == sat_target == set():
+        return True
+
+    if sat_target == set():
+        return False
+
+    for alpha_to in sat_target:
+        if not all((alpha_to, alpha_from) in preorder for alpha_from in sat_source):
+            return False
+
+    return True
+
+
+def semantics_mp_forall_exists(preorder, source, target):
+    return semantics_forall_exists(preorder, source, target)
+
+
+def semantics_mp_exists_forall(preorder, source, target):
+    return semantics_exists_forall(preorder, source, target)
+
+
+def semantics_mp_forall_forall(preorder, source, target):
+    return semantics_forall_forall(preorder, source, target)
 
 
 # =================================================================================== #

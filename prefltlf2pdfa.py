@@ -36,6 +36,11 @@ def parse_args():
     parser = argparse.ArgumentParser(description="prefltlf2pdfa: Translate a preference formula in prefltlf format to a PDFA.")
 
     parser.add_argument("formula_file", help="PrefLTLf formula file")
+    parser.add_argument("-s", "--semantics", default="mp_forall_exists",
+                        help="semantics to use when constructing PDFA. "
+                             "Options: forall_exists, exists_forall, forall_forall, "
+                             "mp_forall_exists, mp_forall_forall, mp_exists_forall. "
+                             "Default is mp_forall_exists")
     parser.add_argument("-o", "--output", default=None,
                         help="saves the PDFA to given file. Output format is a JSON file.")
     parser.add_argument("-p", "--png",
@@ -60,11 +65,12 @@ def parse_args():
         logger.add(args_.logfile, level=args_.loglevel)
 
     # Return other arguments
-    return args_.formula_file, args_.output, args_.png, args_.ifiles, debug
+    logger.info(f"Semantics: {args_.semantics}")
+    return args_.formula_file, args_.semantics, args_.output, args_.png, args_.ifiles, debug
 
 
 def main(args):
-    formula_file, output_file, png_file, ifiles, debug = args
+    formula_file, semantics, output_file, png_file, ifiles, debug = args
 
     # Load formula
     formula = parse_prefltlf(formula_file)
@@ -99,7 +105,22 @@ def main(args):
                 f.write(",".join((str(e) for e in element)) + "\n")
 
     # Translate to PDFA
-    pdfa = translate(model, **{"debug": debug, "ifiles": ifiles})
+    if semantics == "forall_exists":
+        pdfa = translate(model, semantics=semantics_forall_exists, **{"debug": debug, "ifiles": ifiles})
+    elif semantics == "exists_forall":
+        pdfa = translate(model, semantics=semantics_exists_forall, **{"debug": debug, "ifiles": ifiles})
+    elif semantics == "forall_forall":
+        pdfa = translate(model, semantics=semantics_forall_forall, **{"debug": debug, "ifiles": ifiles})
+    elif semantics == "mp_forall_exists":
+        pdfa = translate(model, semantics=semantics_mp_forall_forall, **{"debug": debug, "ifiles": ifiles})
+    elif semantics == "mp_forall_forall":
+        pdfa = translate(model, semantics=semantics_mp_forall_forall, **{"debug": debug, "ifiles": ifiles})
+    elif semantics == "mp_exists_forall":
+        pdfa = translate(model, semantics=semantics_mp_forall_forall, **{"debug": debug, "ifiles": ifiles})
+    else:
+        raise ValueError("Semantics must be one of forall_exists, exists_forall, forall_forall, "
+                         f"mp_forall_exists, mp_forall_forall, mp_exists_forall. {semantics} is unsupported.")
+    # pdfa = translate(model, semantics=mp_semantics, **{"debug": debug, "ifiles": ifiles})
 
     # Stop timer
     end_time = time.time()
