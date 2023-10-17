@@ -1,3 +1,0 @@
-prefltlf
->=,(F(a) & G(b)),G(b)
->,F(a),G(b)

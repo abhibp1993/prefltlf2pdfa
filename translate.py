@@ -30,25 +30,50 @@ def parse_prefltlf(file):
     """
     formula = set()
     with open(file, 'r') as f:
+        # Read formula file
         lines = f.readlines()
         if len(lines) == 0:
             raise EOFError("Empty PrefLTLf file.")
-        formula_type = lines[0].strip().lower()
-        if formula_type != "prefltlf":
-            raise ValueError(f"Not a PrefLTLf formula. Likely a '{formula_type}' formula.")
 
-        for i in range(1, len(lines)):
-            stmt = lines[i].split(",")
-            pref_type = stmt[0].strip()
-            assert pref_type in [">", ">=", "~", "<>"], f"The formula is ill-formed. Unrecognized operator `{pref_type}`"
-            left = PARSER(stmt[1].strip())
-            right = PARSER(stmt[2].strip())
-            formula.add((pref_type, left, right))
+        # Check specification type, extract number of formulas (if provided)
+        header = lines[0].split(" ")
+        if len(header) == 1:
+            formula_type = header[0].strip().lower()
+            if formula_type != "prefltlf":
+                raise ValueError(f"Not a PrefLTLf formula. Likely a '{formula_type}' formula.")
 
-    return formula
+            for i in range(1, len(lines)):
+                stmt = lines[i].split(",")
+                pref_type = stmt[0].strip()
+                assert pref_type in [">", ">=", "~", "<>"], f"The formula is ill-formed. Unrecognized operator `{pref_type}`"
+                left = PARSER(stmt[1].strip())
+                right = PARSER(stmt[2].strip())
+                formula.add((pref_type, left, right))
+
+            return formula, list()
+
+        elif len(header) == 2:
+            formula_type = header[0].strip().lower()
+            if formula_type != "prefltlf":
+                raise ValueError(f"Not a PrefLTLf formula. Likely a '{formula_type}' formula.")
+
+            num_formulas = int(header[1].strip())
+            phi = list()
+            for i in range(1, num_formulas + 1):
+                phi.append(PARSER(lines[i].strip()))
+
+            for i in range(num_formulas + 1, len(lines)):
+                stmt = lines[i].split(",")
+                pref_type = stmt[0].strip()
+                assert pref_type in [">", ">=", "~", "<>"], f"The formula is ill-formed. Unrecognized operator `{pref_type}`"
+                left = phi[int(stmt[1].strip())]
+                right = phi[int(stmt[2].strip())]
+                formula.add((pref_type, left, right))
+
+            return formula, phi
 
 
-def build_prefltlf_model(formula):
+def build_prefltlf_model(formula, phi):
     """
     Build the preference model $$(\Phi, \trianglerighteq)$$ from a PrefLTLf formula.
 
@@ -56,14 +81,14 @@ def build_prefltlf_model(formula):
     :return: ($$(\Phi, \trianglerighteq)$$) A set of LTLf formulas $$\Phi$ and a set of triples (PREF_TYPE, LTLf, LTLf).
     """
     atoms = set()
-    phi = set()
+    ltlf = set()
     preorder = set()
 
     # Construct preorder.
     # First, process the non-incomparability formulas because they add elements to preorder relation.
     for pref_type, phi1, phi2 in (f for f in formula if f[0] != "<>"):
-        phi.add(phi1)
-        phi.add(phi2)
+        ltlf.add(phi1)
+        ltlf.add(phi2)
         if pref_type == ">" or pref_type == ">=":
             preorder.add((phi1, phi2))
 
@@ -75,8 +100,8 @@ def build_prefltlf_model(formula):
 
     # Second, process the incomparability formulas because it removes elements to preorder relation.
     for pref_type, phi1, phi2 in (f for f in formula if f[0] == "<>"):
-        phi.add(phi1)
-        phi.add(phi2)
+        ltlf.add(phi1)
+        ltlf.add(phi2)
         if (phi1, phi2) in preorder:
             logger.warning(f"{(phi1, phi2)} is removed from preorder.")
             preorder.remove((phi1, phi2))
@@ -87,6 +112,12 @@ def build_prefltlf_model(formula):
 
     logger.debug(f"Constructed preorder: \n{pprint.pformat(preorder)}")
 
+    # Validate LTLf formulas identified by parser with those given in specification
+    if len(phi) == 0:
+        phi = list(ltlf)
+    else:
+        assert ltlf == set(phi), "LTLf formulas identified by parser do not match those given in specification."
+
     # Construct atoms.
     for formula_ in phi:
         atoms.update(set(formula_.find_labels()))
@@ -94,6 +125,7 @@ def build_prefltlf_model(formula):
     # Make preorder reflexive.
     for formula_ in phi:
         preorder.add((formula_, formula_))
+    logger.debug(f"Reflexive closure of preorder: \n{pprint.pformat([(str(e1), str(e2)) for e1, e2 in preorder])}")
 
     # Make preorder transitive.
     preorder = transitive_closure(preorder)
@@ -304,13 +336,14 @@ def construct_pref_graph(product_dfa, dfa_list, preorder, semantics):
     # classes = dict()
     for u in product_dfa["final_states"]:
         state = product_dfa["states"][u]['state']
-        outcomes = set(i if state[i] in dfa_list[i]["final_states"] else 0 for i in range(len(state)))
+        # outcomes = set(i if state[i] in dfa_list[i]["final_states"] else 0 for i in range(len(state)))
+        outcomes = set(i for i in range(len(state)) if state[i] in dfa_list[i]["final_states"])
 
         mp_outcomes = outcomes
+        logger.debug(f"outcomes({state})={outcomes}")
         if semantics in [semantics_mp_forall_exists, semantics_mp_exists_forall, semantics_mp_forall_forall]:
             mp_outcomes = get_mp_outcomes(outcomes, preorder)
-
-        logger.debug(f"get_mp_outcomes({outcomes}, {preorder})={mp_outcomes}")
+            logger.debug(f"get_mp_outcomes({outcomes}, {preorder})={mp_outcomes}")
 
         cls = tuple(1 if i in mp_outcomes else 0 for i in range(len(state)))
         if str(cls) in graph["nodes"]:
@@ -369,7 +402,7 @@ def semantics_forall_exists(preorder, source, target):
         return False
 
     for alpha_to in sat_target:
-        if not any((alpha_to, alpha_from) in preorder for alpha_from in sat_source):
+        if len(sat_source) != 0 and not any((alpha_to, alpha_from) in preorder for alpha_from in sat_source):
             return False
 
     return True

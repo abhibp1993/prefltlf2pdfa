@@ -1,8 +1,0 @@
-prefltlf model
-atoms: a,b,c
-phi: 0:F(c),1:F(a),2:F(b)
-1,0
-1,1
-1,2
-0,0
-2,2

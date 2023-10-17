@@ -73,20 +73,28 @@ def main(args):
     formula_file, semantics, output_file, png_file, ifiles, debug = args
 
     # Load formula
-    formula = parse_prefltlf(formula_file)
+    formula, phi = parse_prefltlf(formula_file)
 
     logger.info(f"Formula: \n{pprint.pformat({(str(a), str(b), str(c)) for (a, b, c) in formula})}")
+    logger.info(f"Phi: \n{pprint.pformat(phi)}")
     if ifiles:
         with open(os.path.join(ifiles, "formula.txt"), 'w') as f:
-            f.write("prefltlf\n")
-            for triple in formula:
-                f.write(",".join((str(e) for e in triple)) + "\n")
+            if len(phi) == 0:
+                f.write("prefltlf\n")
+                for triple in formula:
+                    f.write(",".join((str(e) for e in triple)) + "\n")
+            else:
+                f.write(f"prefltlf {len(phi)}\n")
+                for ltlf in phi:
+                    f.write(f"{ltlf}\n")
+                for triple in formula:
+                    f.write(",".join((str(e) for e in triple)) + "\n")
 
     # Start timer
     start_time = time.time()
 
     # Build preference model
-    model = build_prefltlf_model(formula)
+    model = build_prefltlf_model(formula, phi)
     model = index_model(model)
 
     logger.info(f"Model: \n{prettystring_prefltlf_model(model)}")
