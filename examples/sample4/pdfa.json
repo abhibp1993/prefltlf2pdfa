@@ -1,0 +1,27 @@
+{
+  "states": {
+    "0": {
+      "state": {
+        "__type__": "tuple",
+        "__value__": [
+          "1",
+          "1",
+          "1"
+        ]
+      }
+    }
+  },
+  "transitions": {
+    "0": {}
+  },
+  "init_state": 0,
+  "pref_graph": {
+    "nodes": {},
+    "edges": {}
+  },
+  "alphabet": [
+    "a",
+    "c",
+    "b"
+  ]
+}
