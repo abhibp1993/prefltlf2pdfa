@@ -1,3 +1,6 @@
-prefltlf
+prefltlf 3
+F(a)
+F(b)
+F(c)
 >,F(a),F(b)
 >=,F(a),F(c)
