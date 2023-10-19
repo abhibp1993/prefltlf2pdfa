@@ -9,11 +9,13 @@ import os
 import pathlib
 import pprint
 import pygraphviz
-import spot
+# import spot
+import sympy
 
 from ltlf2dfa.parser.ltlf import LTLfParser
 from loguru import logger
 from networkx.drawing import nx_agraph
+# from sympy import *
 
 PARSER = LTLfParser()
 
@@ -292,19 +294,26 @@ def union_product(*args):
 
         # Add transitions to product dfa
         for guard_label in itertools.product(*[args[i]['transitions'][q[i]].keys() for i in range(len(args))]):
-            label = " & ".join(guard_label)
-            label = spot.formula(label).simplify()
+            # label = " & ".join(guard_label)
+            # label = spot.formula(label_join).simplify()
+            cond_str = ("(" + ") & (".join(guard_label) + ")").replace("!", "~")
+            cond = sympy.sympify(cond_str).simplify()
+            logger.debug(f"[{q}] \n\tGuard: {guard_label}, \n\tLabelJoin: {cond_str}, \n\tLabel: {cond}")
 
             # If label is false, then the synchronous transition is not valid.
-            if label.is_ff():
+            if cond == sympy.false:
                 continue
+
+            cond = (str(cond).replace("~", "!").
+                    replace("True", "true").
+                    replace("False", "false"))
 
             # Otherwise, add transition
             q_next = tuple([args[i]['transitions'][q[i]][guard_label[i]] for i in range(len(args))])
             if q_next not in explored:
                 queue.append(q_next)
 
-            product["transitions"][q][str(label)] = q_next
+            product["transitions"][q][cond] = q_next
 
     # Index states and simplify representation
     enum_states = {q: i for i, q in enumerate(product["states"])}
