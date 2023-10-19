@@ -3,13 +3,20 @@ Method to trim DFA based on specific alphabet.
 The transitions need to fire synchronously.
 
 """
+import ast
+import ioutils
 import os
 import pathlib
-
+import translate
 import spot
-import ioutils
-import ast
+
 from pprint import pprint
+
+
+DIR = pathlib.Path(__file__).parent.absolute()
+FILE = os.path.join("examples", "icra2023", "pdfa.json")
+PNG_FILE = os.path.join("examples", "icra2023", "trimmed.png")
+PDFA_FILE = os.path.join("examples", "icra2023", "trimmed_pdfa.json")
 
 
 def trim(pdfa, alphabet):
@@ -109,22 +116,14 @@ def read_pdfa(path) -> dict:
     return base_dict
 
 
-if __name__ == '__main__':
-    DIR = pathlib.Path(__file__).parent.absolute()
-    FILE = os.path.join("examples", "icra2023", "pdfa.json")
+def main():
     pdfa = read_pdfa(os.path.join(DIR, FILE))
-    pprint(pdfa["transitions"])
-
     pdfa = trim(pdfa, [set(), {"d"}, {"o"}, {"t"}])
-
-    print()
-    print()
-    pprint(pdfa["transitions"])
-    import translate
-    translate.pdfa_to_png(pdfa, "test.png")
-
-    print(f"{set.union(*list(pdfa['pref_graph']['nodes'].values())) == set(pdfa['states'])=}")
-    pprint({k: {pdfa['states'][vv]['state'] for vv in v} for k, v in pdfa["pref_graph"]["nodes"].items()})
+    translate.pdfa_to_png(pdfa, PNG_FILE)
     pdfa["pref_graph"]["nodes"] = {str(k): v for k, v in pdfa["pref_graph"]["nodes"].items()}
     pdfa["pref_graph"]["edges"] = {str(k): {str(vv) for vv in v} for k, v in pdfa["pref_graph"]["edges"].items()}
-    ioutils.to_json("icra2023.json", pdfa)
+    ioutils.to_json(PDFA_FILE, pdfa)
+
+
+if __name__ == '__main__':
+    main()
