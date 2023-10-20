@@ -73,7 +73,8 @@ def main(args):
     formula_file, semantics, output_file, png_file, ifiles, debug = args
 
     # Load formula
-    formula, phi = parse_prefltlf(formula_file)
+    raw_spec = read_prefltlf(formula_file)
+    formula, phi = parse_prefltlf(raw_spec)
 
     logger.info(f"Formula: \n{pprint.pformat({(str(a), str(b), str(c)) for (a, b, c) in formula})}")
     logger.info(f"Phi: \n{pprint.pformat(phi)}")

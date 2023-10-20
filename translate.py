@@ -24,55 +24,61 @@ PARSER = LTLfParser()
 # PARSE FORMULA, BUILD PREFERENCE MODEL
 # =================================================================================== #
 
-def parse_prefltlf(file):
+def read_prefltlf(file):
+    """
+    Load a PrefLTLf formula from a file.
+
+    :return: (Tuple[set, set, set]) A tuple of (atoms, phi, preorder).
+    """
+    with open(file, 'r') as f:
+        lines = f.readlines()
+        return lines
+
+def parse_prefltlf(raw_spec):
     """
     Read a PrefLTLf formula from a file.
 
     :return: (set) A set of triples (PREF_TYPE, LTLf Formula, LTLf Formula).
     """
+    if len(raw_spec) == 0:
+        raise EOFError("Empty PrefLTLf file.")
+
     formula = set()
-    with open(file, 'r') as f:
-        # Read formula file
-        lines = f.readlines()
-        if len(lines) == 0:
-            raise EOFError("Empty PrefLTLf file.")
+    header = raw_spec[0].split(" ")
+    if len(header) == 1:
+        formula_type = header[0].strip().lower()
+        if formula_type != "prefltlf":
+            raise ValueError(f"Not a PrefLTLf formula. Likely a '{formula_type}' formula.")
 
-        # Check specification type, extract number of formulas (if provided)
-        header = lines[0].split(" ")
-        if len(header) == 1:
-            formula_type = header[0].strip().lower()
-            if formula_type != "prefltlf":
-                raise ValueError(f"Not a PrefLTLf formula. Likely a '{formula_type}' formula.")
+        for i in range(1, len(raw_spec)):
+            stmt = raw_spec[i].split(",")
+            pref_type = stmt[0].strip()
+            assert pref_type in [">", ">=", "~", "<>"], f"The formula is ill-formed. Unrecognized operator `{pref_type}`"
+            left = PARSER(stmt[1].strip())
+            right = PARSER(stmt[2].strip())
+            formula.add((pref_type, left, right))
 
-            for i in range(1, len(lines)):
-                stmt = lines[i].split(",")
-                pref_type = stmt[0].strip()
-                assert pref_type in [">", ">=", "~", "<>"], f"The formula is ill-formed. Unrecognized operator `{pref_type}`"
-                left = PARSER(stmt[1].strip())
-                right = PARSER(stmt[2].strip())
-                formula.add((pref_type, left, right))
+        return formula, list()
 
-            return formula, list()
+    elif len(header) == 2:
+        formula_type = header[0].strip().lower()
+        if formula_type != "prefltlf":
+            raise ValueError(f"Not a PrefLTLf formula. Likely a '{formula_type}' formula.")
 
-        elif len(header) == 2:
-            formula_type = header[0].strip().lower()
-            if formula_type != "prefltlf":
-                raise ValueError(f"Not a PrefLTLf formula. Likely a '{formula_type}' formula.")
+        num_formulas = int(header[1].strip())
+        phi = list()
+        for i in range(1, num_formulas + 1):
+            phi.append(PARSER(raw_spec[i].strip()))
 
-            num_formulas = int(header[1].strip())
-            phi = list()
-            for i in range(1, num_formulas + 1):
-                phi.append(PARSER(lines[i].strip()))
+        for i in range(num_formulas + 1, len(raw_spec)):
+            stmt = raw_spec[i].split(",")
+            pref_type = stmt[0].strip()
+            assert pref_type in [">", ">=", "~", "<>"], f"The formula is ill-formed. Unrecognized operator `{pref_type}`"
+            left = phi[int(stmt[1].strip())]
+            right = phi[int(stmt[2].strip())]
+            formula.add((pref_type, left, right))
 
-            for i in range(num_formulas + 1, len(lines)):
-                stmt = lines[i].split(",")
-                pref_type = stmt[0].strip()
-                assert pref_type in [">", ">=", "~", "<>"], f"The formula is ill-formed. Unrecognized operator `{pref_type}`"
-                left = phi[int(stmt[1].strip())]
-                right = phi[int(stmt[2].strip())]
-                formula.add((pref_type, left, right))
-
-            return formula, phi
+        return formula, phi
 
 
 def build_prefltlf_model(formula, phi):
