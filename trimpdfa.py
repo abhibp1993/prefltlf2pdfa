@@ -82,6 +82,8 @@ def trim(pdfa, alphabet):
         for target in targets - set(pdfa["pref_graph"]["nodes"].keys()):
             pdfa["pref_graph"]["edges"][source].remove(target)
 
+    pdfa["alphabet"] = alphabet
+
     return pdfa
 
 

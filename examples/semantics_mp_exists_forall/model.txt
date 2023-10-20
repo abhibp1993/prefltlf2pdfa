@@ -1,5 +1,5 @@
 prefltlf model
-atoms: a,c,b
+atoms: c,a,b
 phi: 0:F(a),1:F(b),2:F(c)
 0,2
 2,2
