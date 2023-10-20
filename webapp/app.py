@@ -45,6 +45,7 @@ app.layout = html.Div([
         ),
     ], className="box"),
     html.Button("Submit", id="submit-button", className="box-title"),
+    html.Button("Submit and Download", id="submit-and-download-button", className="box-title"),
     html.Div([  # Image containers side by side
         html.Div([  # Image box for "pic1"
             html.Div("PDFA Underlying Graph", className="image-box"),  # Title
