@@ -1,0 +1,73 @@
+/* styles.css */
+
+/* Center the app content */
+.center-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+}
+
+/* Style the title */
+h1 {
+    color: black;
+}
+
+/* Style button */
+button {
+    padding: 10px;
+    margin: 5px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 14px;
+}
+
+/* Style text areas */
+textarea {
+    padding: 10px;
+    margin: 5px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 14px;
+    width: 300px; /* Adjust the width as needed */
+}
+
+/* Style text area labels */
+label {
+    font-size: 16px;
+    font-weight: bold;
+}
+
+/* Style the radio buttons container */
+.box {
+    border: 1px solid #ccc;
+    border-radius: 10px;
+    padding: 10px;
+    background-color: #f4f4f4;
+    margin: 10px 0;
+}
+
+/* Style the title within the radio buttons container */
+.box-title {
+    font-weight: bold;
+    font-size: 20px;
+}
+
+
+/* Style individual image boxes */
+.image-container {
+    flex: 1; /* Each box takes equal space */
+    margin: 10px;
+    border: 1px solid #ccc;
+    border-radius: 10px;
+    padding: 10px;
+    background-color: #f4f4f4;
+    text-align: center;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+.image-boxes {
+    display: flex; /* Display image boxes side by side */
+}
