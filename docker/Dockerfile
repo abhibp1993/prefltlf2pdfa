@@ -15,7 +15,7 @@ RUN apt-get update && \
 
 
 # Install sphinx documentation packages
-RUN #pip3 install sphinx myst-parser sphinx_rtd_theme recommonmark nbsphinx
+# RUN pip3 install sphinx myst-parser sphinx_rtd_theme recommonmark nbsphinx
 
 
 # Graphviz
