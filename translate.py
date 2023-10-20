@@ -15,6 +15,7 @@ import sympy
 from ltlf2dfa.parser.ltlf import LTLfParser
 from loguru import logger
 from networkx.drawing import nx_agraph
+
 # from sympy import *
 
 PARSER = LTLfParser()
@@ -33,6 +34,7 @@ def read_prefltlf(file):
     with open(file, 'r') as f:
         lines = f.readlines()
         return lines
+
 
 def parse_prefltlf(raw_spec):
     """
@@ -418,7 +420,7 @@ def semantics_forall_exists(preorder, source, target):
 
     for alpha_to in sat_target:
         if len(sat_source) != 0 and not any((alpha_to, alpha_from) in preorder for alpha_from in sat_source):
-        # if len(sat_source) != 0 and not any((alpha_to, alpha_from) in preorder for alpha_from in sat_source - {alpha_to}):
+            # if len(sat_source) != 0 and not any((alpha_to, alpha_from) in preorder for alpha_from in sat_source - {alpha_to}):
             return False
 
     return True
