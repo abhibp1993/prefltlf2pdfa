@@ -13,10 +13,15 @@ import spot
 from pprint import pprint
 
 
+# ==============================================================================================
+# TO BE MODIFIED BY USER
+# ==============================================================================================
 DIR = pathlib.Path(__file__).parent.absolute()
 FILE = os.path.join("examples", "icra2023", "pdfa.json")
 PNG_FILE = os.path.join("examples", "icra2023", "trimmed.png")
 PDFA_FILE = os.path.join("examples", "icra2023", "trimmed_pdfa.json")
+ALPHABET = [set(), {"d"}, {"o"}, {"t"}]
+# ==============================================================================================
 
 
 def trim(pdfa, alphabet):
@@ -118,7 +123,7 @@ def read_pdfa(path) -> dict:
 
 def main():
     pdfa = read_pdfa(os.path.join(DIR, FILE))
-    pdfa = trim(pdfa, [set(), {"d"}, {"o"}, {"t"}])
+    pdfa = trim(pdfa, ALPHABET)
     translate.pdfa_to_png(pdfa, PNG_FILE)
     pdfa["pref_graph"]["nodes"] = {str(k): v for k, v in pdfa["pref_graph"]["nodes"].items()}
     pdfa["pref_graph"]["edges"] = {str(k): {str(vv) for vv in v} for k, v in pdfa["pref_graph"]["edges"].items()}
