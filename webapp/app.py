@@ -5,11 +5,14 @@ from dash.dependencies import Input, Output
 from PIL import Image
 import io
 import base64
+import zipfile
+import shutil
 
 import ioutils
 from translate import *
 from loguru import logger
 import time
+from trimpdfa import trim
 
 app = dash.Dash(__name__)
 server = app.server
@@ -21,7 +24,6 @@ app.css.append_css({"external_url": "styles.css"})
 
 # Create a download link for the images
 download_zip = dcc.Download(id="download_output")
-
 
 app.layout = html.Div([
     html.H1("prefltlf2pdfa translator"),
@@ -54,17 +56,23 @@ app.layout = html.Div([
         ),
     ], className="box"),
     html.Button("Translate", id="submit-button", className="box-title"),
-    html.Button("Translate and Download", id="submit-and-download-button", className="box-title"),
+    html.Div([
+        html.Button("Translate and Download", id="download-button", className="box-title"),
+        # dcc.Link(id='dynamic-link', children='Click me', href='#'),
+        dcc.Download(id="download-text")
+    ]),
+    # html.Button("Translate and Download", id="submit-and-download-button", className="box-title"),
+    # dcc.Link(id='dynamic-link', children='Click me', href='#'),
     # dcc.Download(id="download-text"),  # Include the download link in the layout
     # html.Div([  # Image containers side by side
-        html.Div([  # Image box for "pic1"
-            html.Div("PDFA Underlying Graph", className="image-box"),  # Title
-            html.Img(id="image1", style={'max-width': '100%', 'max-height': '100%'}),
-        ], className="image-container"),
-        html.Div([  # Image box for "pic2"
-            html.Div("PDFA Preference Graph", className="image-box"),  # Title
-            html.Img(id="image2", style={'max-width': '100%', 'max-height': '100%'}),
-        ], className="image-container"),
+    html.Div([  # Image box for "pic1"
+        html.Div("PDFA Underlying Graph", className="image-box"),  # Title
+        html.Img(id="image1", style={'max-width': '100%', 'max-height': '100%'}),
+    ], className="image-container"),
+    html.Div([  # Image box for "pic2"
+        html.Div("PDFA Preference Graph", className="image-box"),  # Title
+        html.Img(id="image2", style={'max-width': '100%', 'max-height': '100%'}),
+    ], className="image-container"),
     # ], className="image-boxes"),
     html.Label("pdfa.json", className="box-title"),
     html.Div([  # Text area container
@@ -129,16 +137,18 @@ def cb_func(text):
         Output("image1", "src"),
         Output("image2", "src"),
         Output("text-output", "value"),
-        Output("text-error", "value")
+        Output("text-error", "value"),
+        # Output("download-text", "data"),
+        # Output("dynamic-link", "href"),
     ],
     Input("submit-button", "n_clicks"),
     [dash.dependencies.State("text-input", "value"),
      dash.dependencies.State("text-input-right", "value"),  # Include the second text area
-     dash.dependencies.State("radio-buttons", "value") # Include the radio button value
-     ]
+     dash.dependencies.State("radio-buttons", "value")  # Include the radio button value
+     ],
+    # prevent_initial_call=True,
 )
 def update_images(n_clicks, formula, alphabet, semantics):
-
     if n_clicks is not None and formula:
         base_dir = pathlib.Path(__file__).parent
         out_dir = os.path.join(base_dir, "assets", "out")
@@ -149,6 +159,9 @@ def update_images(n_clicks, formula, alphabet, semantics):
         next_index = max(folder_indices) + 1 if len(folder_indices) > 0 else 0
         os.mkdir(os.path.join(out_dir, f"out_{next_index}"))
         ifiles = os.path.join(out_dir, f"out_{next_index}")
+
+        logger.remove()
+        logger.add(os.path.join(ifiles, "run.log"), level="DEBUG")
 
         formula = formula.split("\n")
         formula, phi = parse_prefltlf(formula)
@@ -204,6 +217,20 @@ def update_images(n_clicks, formula, alphabet, semantics):
                              f"mp_forall_exists, mp_forall_forall, mp_exists_forall. {semantics} is unsupported.")
         # pdfa = translate(model, semantics=mp_semantics, **{"debug": debug, "ifiles": ifiles})
 
+        # Trimming if necessary
+        if alphabet:
+            symbols = list()
+            for symbol in alphabet.split("\n"):
+                symbol = ast.literal_eval(symbol)
+                if isinstance(symbol, dict):
+                    symbols.append(set())
+                else:
+                    symbols.append(symbol)
+
+            pdfa = trim(pdfa, symbols)
+            pdfa["pref_graph"]["nodes"] = {str(k): v for k, v in pdfa["pref_graph"]["nodes"].items()}
+            pdfa["pref_graph"]["edges"] = {str(k): {str(vv) for vv in v} for k, v in pdfa["pref_graph"]["edges"].items()}
+
         # Stop timer
         end_time = time.time()
 
@@ -218,14 +245,33 @@ def update_images(n_clicks, formula, alphabet, semantics):
         # Print to stdout
         logger.info(f"====== TRANSLATION COMPLETED IN {round((end_time - start_time) * 10 ** 3, 4)} MILLISECONDS =====")
         logger.info(prettystring_pdfa(pdfa))
+        out_str = prettystring_pdfa(pdfa)
 
-        out_str = f"====== TRANSLATION COMPLETED IN {round((end_time - start_time) * 10 ** 3, 4)} MILLISECONDS =====\n\n"
-        out_str += prettystring_pdfa(pdfa)
+        log_str = f"====== TRANSLATION COMPLETED IN {round((end_time - start_time) * 10 ** 3, 4)} MILLISECONDS =====\n\n"
+        with open(os.path.join(ifiles, "run.log"), 'r') as f:
+            log_str += f.read()
 
+        zip_folder(os.path.join(out_dir, f"out_{next_index}"), os.path.join(out_dir, f"out_{next_index}.zip"))
         # return "/" + str(os.path.join("out", f"out_{next_index}", "out_dfa.png")), os.path.join("out", f"out_{next_index}", "out_pref_graph.png"), out_str, "error"
-        return f"/assets/out/out_{next_index}/out_dfa.png", f"/assets/out/out_{next_index}/out_pref_graph.png", out_str, "error"
+        return (
+            f"assets/out/out_{next_index}/out_dfa.png",
+            f"assets/out/out_{next_index}/out_pref_graph.png",
+            out_str,
+            log_str,
+            # f"assets/out/out_{next_index}.zip"
+        )
 
-    return "", "", "", ""
+
+    return "", "", "", "", ""
+
+
+def zip_folder(folder_path, output_zip_path):
+    with zipfile.ZipFile(output_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for root, _, files in os.walk(folder_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                arcname = os.path.relpath(file_path, folder_path)
+                zipf.write(file_path, arcname)
 
 
 if __name__ == '__main__':
