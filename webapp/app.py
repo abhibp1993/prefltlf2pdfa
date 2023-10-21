@@ -45,7 +45,7 @@ app.layout = html.Div([
             id="radio-buttons",
             options=[
                 {'label': 'forall_exists', 'value': 'forall_exists'},
-                {'label': 'exists_forall 2', 'value': 'exists_forall'},
+                {'label': 'exists_forall', 'value': 'exists_forall'},
                 {'label': 'forall_forall', 'value': 'forall_forall'},
                 {'label': 'mp_forall_exists', 'value': 'mp_forall_exists'},
                 {'label': 'mp_exists_forall', 'value': 'mp_exists_forall'},
@@ -56,11 +56,10 @@ app.layout = html.Div([
         ),
     ], className="box"),
     html.Button("Translate", id="submit-button", className="box-title"),
-    html.Div([
-        html.Button("Translate and Download", id="download-button", className="box-title"),
-        # dcc.Link(id='dynamic-link', children='Click me', href='#'),
-        dcc.Download(id="download-text")
-    ]),
+    # html.Div([
+    #     html.Button("Translate and Download", id="download-button", className="box-title"),
+    html.A("Download", id="dynamic-link", href="#", className="box-title"),
+    # ]),
     # html.Button("Translate and Download", id="submit-and-download-button", className="box-title"),
     # dcc.Link(id='dynamic-link', children='Click me', href='#'),
     # dcc.Download(id="download-text"),  # Include the download link in the layout
@@ -139,7 +138,7 @@ def cb_func(text):
         Output("text-output", "value"),
         Output("text-error", "value"),
         # Output("download-text", "data"),
-        # Output("dynamic-link", "href"),
+        Output("dynamic-link", "href"),
     ],
     Input("submit-button", "n_clicks"),
     [dash.dependencies.State("text-input", "value"),
@@ -258,11 +257,141 @@ def update_images(n_clicks, formula, alphabet, semantics):
             f"assets/out/out_{next_index}/out_pref_graph.png",
             out_str,
             log_str,
-            # f"assets/out/out_{next_index}.zip"
+            f"assets/out/out_{next_index}.zip"
         )
 
 
     return "", "", "", "", ""
+
+
+# @app.callback(
+#     [
+#         Output("image1", "src"),
+#         Output("image2", "src"),
+#         Output("text-output", "value"),
+#         Output("text-error", "value"),
+#         # Output("download-text", "data"),
+#         # Output("dynamic-link", "href"),
+#     ],
+#     Input("download-button", "n_clicks"),
+# 
+#     # prevent_initial_call=True,
+# )
+# def download(n_clicks, formula, alphabet, semantics):
+#     if n_clicks is not None and formula:
+#         base_dir = pathlib.Path(__file__).parent
+#         out_dir = os.path.join(base_dir, "assets", "out")
+# 
+#         # Find existing folders and get their indices
+#         existing_folders = [d for d in os.listdir(out_dir) if os.path.isdir(os.path.join(out_dir, d))]
+#         folder_indices = [int(folder.split('_')[1]) for folder in existing_folders if folder.startswith('out_')]
+#         next_index = max(folder_indices) + 1 if len(folder_indices) > 0 else 0
+#         os.mkdir(os.path.join(out_dir, f"out_{next_index}"))
+#         ifiles = os.path.join(out_dir, f"out_{next_index}")
+# 
+#         logger.remove()
+#         logger.add(os.path.join(ifiles, "run.log"), level="DEBUG")
+# 
+#         formula = formula.split("\n")
+#         formula, phi = parse_prefltlf(formula)
+#         with open(os.path.join(ifiles, "formula.txt"), 'w') as f:
+#             if len(phi) == 0:
+#                 f.write("prefltlf\n")
+#                 for triple in formula:
+#                     f.write(",".join((str(e) for e in triple)) + "\n")
+#             else:
+#                 f.write(f"prefltlf {len(phi)}\n")
+#                 for ltlf in phi:
+#                     f.write(f"{ltlf}\n")
+#                 for triple in formula:
+#                     f.write(",".join((str(e) for e in triple)) + "\n")
+# 
+#         # Start timer
+#         start_time = time.time()
+# 
+#         # Build preference model
+#         model = build_prefltlf_model(formula, phi)
+#         model = index_model(model)
+# 
+#         logger.info(f"Model: \n{prettystring_prefltlf_model(model)}")
+#         with open(os.path.join(ifiles, "model.txt"), 'w') as f:
+#             atoms, phi, preorder = model
+#             f.write("prefltlf model\n")
+#             f.write("atoms: " + ",".join(atoms) + "\n")
+#             f.write("phi: ")
+#             for idx in range(len(phi)):
+#                 if idx > 0:
+#                     f.write(",")
+#                 f.write(f"{idx}:{phi[idx]}")
+#             f.write("\n")
+#             for element in preorder:
+#                 f.write(",".join((str(e) for e in element)) + "\n")
+# 
+#         # Translate to PDFA
+#         debug = True
+#         if semantics == "forall_exists":
+#             pdfa = translate(model, semantics=semantics_forall_exists, **{"debug": debug, "ifiles": ifiles})
+#         elif semantics == "exists_forall":
+#             pdfa = translate(model, semantics=semantics_exists_forall, **{"debug": debug, "ifiles": ifiles})
+#         elif semantics == "forall_forall":
+#             pdfa = translate(model, semantics=semantics_forall_forall, **{"debug": debug, "ifiles": ifiles})
+#         elif semantics == "mp_forall_exists":
+#             pdfa = translate(model, semantics=semantics_mp_forall_forall, **{"debug": debug, "ifiles": ifiles})
+#         elif semantics == "mp_forall_forall":
+#             pdfa = translate(model, semantics=semantics_mp_forall_forall, **{"debug": debug, "ifiles": ifiles})
+#         elif semantics == "mp_exists_forall":
+#             pdfa = translate(model, semantics=semantics_mp_forall_forall, **{"debug": debug, "ifiles": ifiles})
+#         else:
+#             raise ValueError("Semantics must be one of forall_exists, exists_forall, forall_forall, "
+#                              f"mp_forall_exists, mp_forall_forall, mp_exists_forall. {semantics} is unsupported.")
+#         # pdfa = translate(model, semantics=mp_semantics, **{"debug": debug, "ifiles": ifiles})
+# 
+#         # Trimming if necessary
+#         if alphabet:
+#             symbols = list()
+#             for symbol in alphabet.split("\n"):
+#                 symbol = ast.literal_eval(symbol)
+#                 if isinstance(symbol, dict):
+#                     symbols.append(set())
+#                 else:
+#                     symbols.append(symbol)
+# 
+#             pdfa = trim(pdfa, symbols)
+#             pdfa["pref_graph"]["nodes"] = {str(k): v for k, v in pdfa["pref_graph"]["nodes"].items()}
+#             pdfa["pref_graph"]["edges"] = {str(k): {str(vv) for vv in v} for k, v in pdfa["pref_graph"]["edges"].items()}
+# 
+#         # Stop timer
+#         end_time = time.time()
+# 
+#         # Save PDFA to intermediate files
+#         if ifiles:
+#             ioutils.to_json(os.path.join(ifiles, "pdfa.json"), pdfa)
+# 
+#         # Save files as per flags
+#         ioutils.to_json(os.path.join(ifiles, "pdfa.json"), pdfa)
+#         pdfa_to_png(pdfa, os.path.join(ifiles, "out.png"))
+# 
+#         # Print to stdout
+#         logger.info(f"====== TRANSLATION COMPLETED IN {round((end_time - start_time) * 10 ** 3, 4)} MILLISECONDS =====")
+#         logger.info(prettystring_pdfa(pdfa))
+#         out_str = prettystring_pdfa(pdfa)
+# 
+#         log_str = f"====== TRANSLATION COMPLETED IN {round((end_time - start_time) * 10 ** 3, 4)} MILLISECONDS =====\n\n"
+#         with open(os.path.join(ifiles, "run.log"), 'r') as f:
+#             log_str += f.read()
+# 
+#         zip_folder(os.path.join(out_dir, f"out_{next_index}"), os.path.join(out_dir, f"out_{next_index}.zip"))
+#         # return "/" + str(os.path.join("out", f"out_{next_index}", "out_dfa.png")), os.path.join("out", f"out_{next_index}", "out_pref_graph.png"), out_str, "error"
+#         return (
+#             f"assets/out/out_{next_index}/out_dfa.png",
+#             f"assets/out/out_{next_index}/out_pref_graph.png",
+#             out_str,
+#             log_str,
+#             # f"assets/out/out_{next_index}.zip"
+#         )
+# 
+# 
+#     return "", "", "", "", ""
 
 
 def zip_folder(folder_path, output_zip_path):
