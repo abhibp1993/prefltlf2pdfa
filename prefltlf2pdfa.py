@@ -121,11 +121,11 @@ def main(args):
     elif semantics == "forall_forall":
         pdfa = translate(model, semantics=semantics_forall_forall, **{"debug": debug, "ifiles": ifiles})
     elif semantics == "mp_forall_exists":
-        pdfa = translate(model, semantics=semantics_mp_forall_forall, **{"debug": debug, "ifiles": ifiles})
+        pdfa = translate(model, semantics=semantics_mp_forall_exists, **{"debug": debug, "ifiles": ifiles})
     elif semantics == "mp_forall_forall":
         pdfa = translate(model, semantics=semantics_mp_forall_forall, **{"debug": debug, "ifiles": ifiles})
     elif semantics == "mp_exists_forall":
-        pdfa = translate(model, semantics=semantics_mp_forall_forall, **{"debug": debug, "ifiles": ifiles})
+        pdfa = translate(model, semantics=semantics_mp_exists_forall, **{"debug": debug, "ifiles": ifiles})
     else:
         raise ValueError("Semantics must be one of forall_exists, exists_forall, forall_forall, "
                          f"mp_forall_exists, mp_forall_forall, mp_exists_forall. {semantics} is unsupported.")
