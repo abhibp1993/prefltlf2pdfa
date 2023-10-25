@@ -439,11 +439,14 @@ class PrefAutomaton:
         return aut
 
     def add_state(self, name):
-        if name not in self._inv_state:
-            self.states[self._num_states] = name
-            self._inv_state[name] = self._num_states
-            self.transitions[self._num_states] = dict()
+        uid = self._inv_state.get(name, None)
+        if uid is None:
+            uid = self._num_states
+            self.states[uid] = name
+            self._inv_state[name] = uid
+            self.transitions[uid] = dict()
             self._num_states += 1
+        return uid
 
     def get_states(self, name=False):
         if name:
@@ -540,6 +543,8 @@ def dfa_to_png(dfa, file):
 
 
 if __name__ == '__main__':
+    import vizutils
+
     spec = PrefLTLf.from_file(os.path.join("examples", "icra2023", "icra2023.prefltlf"), alphabet=[
         set(),
         {'t'},
@@ -549,3 +554,6 @@ if __name__ == '__main__':
     pdfa = spec.translate(semantics=semantics_forall_exists)
     print(spec)
     print(pdfa)
+    # vizutils.dfa2png(spec.dfa[0], "dfa0.png")
+    # vizutils.spec2png(spec, "dfa0.png")
+    vizutils.pdfa2png(pdfa, "dfa0.png", show_state_name=False, show_node_class=False)
