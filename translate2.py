@@ -554,6 +554,6 @@ if __name__ == '__main__':
     pdfa = spec.translate(semantics=semantics_forall_exists)
     print(spec)
     print(pdfa)
-    # vizutils.dfa2png(spec.dfa[0], "dfa0.png")
+    vizutils.dfa2png(spec.dfa[0], "dfa0.png")
     # vizutils.spec2png(spec, "dfa0.png")
-    vizutils.pdfa2png(pdfa, "dfa0.png", show_state_name=False, show_node_class=False)
+    # vizutils.pdfa2png(pdfa, "dfa0.png", show_state_name=False, show_node_class=False)
