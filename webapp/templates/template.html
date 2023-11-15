@@ -1,0 +1,135 @@
+{% extends "bootstrap/base.html" %}
+
+{% block content %}
+<h1>prefltlf2pdfa translator</h1>
+<h3>Author: <a href="http://www.akulkarni.me">Abhishek N. Kulkarni</a></h3>
+
+<body>
+
+  <div class="container">
+  <div class="row">
+    <div class="col">
+      Column
+    </div>
+    <div class="col">
+      Column
+    </div>
+    <div class="col">
+      Column
+    </div>
+  </div>
+</div>
+
+</body>
+{% endblock %}
+
+<!--<!DOCTYPE html>-->
+<!--<html>-->
+<!--<head>-->
+<!--    <title>Prefltlf2pdfa Translator</title>-->
+<!--</head>-->
+<!--<body>-->
+<!--    <h1>prefltlf2pdfa translator</h1>-->
+<!--    <h3>Author: <a href="http://www.akulkarni.me">Abhishek N. Kulkarni</a></h3>-->
+
+<!--    <div style="height: 20px;"></div>-->
+<!--    <div>-->
+<!--        <div>-->
+<!--            <div style="width: 40px;"></div>-->
+<!--            <div style="width: 5%; float: left;">-->
+<!--                <div style="text-decoration: underline;">PrefLTLf Specification:</div>-->
+<!--                <label for="text-spec"></label><textarea id="text-spec" rows="10"></textarea>-->
+<!--            </div>-->
+<!--            <div style="width: 20px;"></div>-->
+<!--            <div style="width: 5%; float: left;">-->
+<!--                <div style="text-decoration: underline;">Alphabet:</div>-->
+<!--                <label for="text-alphabet"></label><textarea id="text-alphabet" rows="10"></textarea>-->
+<!--            </div>-->
+<!--        </div>-->
+<!--    </div>-->
+
+<!--&lt;!&ndash;    <div style="height: 20px;"></div>&ndash;&gt;-->
+<!--&lt;!&ndash;    <div>&ndash;&gt;-->
+<!--&lt;!&ndash;        <div>&ndash;&gt;-->
+<!--&lt;!&ndash;            <div style="width: 20px;"></div>&ndash;&gt;-->
+<!--&lt;!&ndash;            <div style="width: 5%; float: left;">&ndash;&gt;-->
+<!--&lt;!&ndash;                <div style="height: 5px;"></div>&ndash;&gt;-->
+<!--&lt;!&ndash;                <div style="text-decoration: underline;">DFA to PNG Options:</div>&ndash;&gt;-->
+<!--&lt;!&ndash;                <div style="height: 5px;"></div>&ndash;&gt;-->
+<!--&lt;!&ndash;                <input type="checkbox" id="dfa2png-enable" value="dfa2png-enable" checked="checked">&ndash;&gt;-->
+<!--&lt;!&ndash;                <label for="dfa2png-enable">Generate DFA Images</label>&ndash;&gt;-->
+<!--&lt;!&ndash;                <div style="height: 5px;"></div>&ndash;&gt;-->
+<!--&lt;!&ndash;                <select id="dfa2png-engine" style="width: 150px;">&ndash;&gt;-->
+<!--&lt;!&ndash;                    <option value="dfa2png-dot" selected="selected">dot</option>&ndash;&gt;-->
+<!--&lt;!&ndash;                    <option value="dfa2png-neato">neato</option>&ndash;&gt;-->
+<!--&lt;!&ndash;                    <option value="dfa2png-fdp">fdp</option>&ndash;&gt;-->
+<!--&lt;!&ndash;                </select>&ndash;&gt;-->
+<!--&lt;!&ndash;            </div>&ndash;&gt;-->
+<!--&lt;!&ndash;            <div style="width: 20px;"></div>&ndash;&gt;-->
+<!--&lt;!&ndash;            <div style="width: 5%; float: left;">&ndash;&gt;-->
+<!--&lt;!&ndash;                <div style="height: 5px;"></div>&ndash;&gt;-->
+<!--&lt;!&ndash;                <div style="text-decoration: underline;">PrefLTLf Model Visualization Options:</div>&ndash;&gt;-->
+<!--&lt;!&ndash;                <div style="height: 5px;"></div>&ndash;&gt;-->
+<!--&lt;!&ndash;                <input type="checkbox" id="spec2png-enable" value="spec2png-enable" checked="checked">&ndash;&gt;-->
+<!--&lt;!&ndash;                <label for="spec2png-enable">Generate PrefLTLf Model</label>&ndash;&gt;-->
+<!--&lt;!&ndash;                <input type="checkbox" id="spec2png-show-formula" value="spec2png-show-formula">&ndash;&gt;-->
+<!--&lt;!&ndash;                <label for="spec2png-show-formula">Show formulas in nodes</label>&ndash;&gt;-->
+<!--&lt;!&ndash;                <div style="height: 5px;"></div>&ndash;&gt;-->
+<!--&lt;!&ndash;                <select id="spec2png-engine" style="width: 150px;">&ndash;&gt;-->
+<!--&lt;!&ndash;                    <option value="spec2png-dot" selected="selected">dot</option>&ndash;&gt;-->
+<!--&lt;!&ndash;                    <option value="spec2png-neato">neato</option>&ndash;&gt;-->
+<!--&lt;!&ndash;                    <option value="spec2png-fdp">fdp</option>&ndash;&gt;-->
+<!--&lt;!&ndash;                </select>&ndash;&gt;-->
+<!--&lt;!&ndash;            </div>&ndash;&gt;-->
+<!--&lt;!&ndash;            <div style="width: 20px;"></div>&ndash;&gt;-->
+<!--&lt;!&ndash;            <div style="width: 5%; float: left;">&ndash;&gt;-->
+<!--&lt;!&ndash;                <div style="height: 5px;"></div>&ndash;&gt;-->
+<!--&lt;!&ndash;                <div style="text-decoration: underline;">PDFA Visualization Options:</div>&ndash;&gt;-->
+<!--&lt;!&ndash;                <div style="height: 5px;"></div>&ndash;&gt;-->
+<!--&lt;!&ndash;                <input type="checkbox" id="pdfa2png-state-names" value="pdfa2png-state-names">&ndash;&gt;-->
+<!--&lt;!&ndash;                <label for="pdfa2png-state-names">Show product state names</label>&ndash;&gt;-->
+<!--&lt;!&ndash;                <input type="checkbox" id="pdfa2png-node-class" value="pdfa2png-node-class">&ndash;&gt;-->
+<!--&lt;!&ndash;                <label for="pdfa2png-node-class">Show preference graph class names</label>&ndash;&gt;-->
+<!--&lt;!&ndash;                <div style="height: 5px;"></div>&ndash;&gt;-->
+<!--&lt;!&ndash;                <select id="pdfa2png-engine" style="width: 150px;">&ndash;&gt;-->
+<!--&lt;!&ndash;                    <option value="pdfa2png-dot" selected="selected">dot</option>&ndash;&gt;-->
+<!--&lt;!&ndash;                    <option value="pdfa2png-neato">neato</option>&ndash;&gt;-->
+<!--&lt;!&ndash;                    <option value="pdfa2png-fdp">fdp</option>&ndash;&gt;-->
+<!--&lt;!&ndash;                </select>&ndash;&gt;-->
+<!--&lt;!&ndash;            </div>&ndash;&gt;-->
+<!--&lt;!&ndash;            <div style="width: 20px;"></div>&ndash;&gt;-->
+<!--&lt;!&ndash;        </div>&ndash;&gt;-->
+<!--&lt;!&ndash;    </div>&ndash;&gt;-->
+
+<!--&lt;!&ndash;    <div style="height: 20px;"></div>&ndash;&gt;-->
+<!--&lt;!&ndash;    <div>&ndash;&gt;-->
+<!--&lt;!&ndash;        <button>Translate</button>&ndash;&gt;-->
+<!--&lt;!&ndash;        <a href="#" id="dynamic-link">Download Generated Files</a>&ndash;&gt;-->
+<!--&lt;!&ndash;    </div>&ndash;&gt;-->
+
+<!--&lt;!&ndash;    <div style="height: 20px;"></div>&ndash;&gt;-->
+<!--&lt;!&ndash;    <div>&ndash;&gt;-->
+<!--&lt;!&ndash;        <div style="float: left; width: 50%;">&ndash;&gt;-->
+<!--&lt;!&ndash;            <div class="image-box">PDFA Underlying Graph</div>&ndash;&gt;-->
+<!--&lt;!&ndash;            <img id="image1" style="max-width: 100%; max-height: 100%;">&ndash;&gt;-->
+<!--&lt;!&ndash;        </div>&ndash;&gt;-->
+<!--&lt;!&ndash;        <div style="float: left; width: 50%;">&ndash;&gt;-->
+<!--&lt;!&ndash;            <div class="image-box">PDFA Preference Graph</div>&ndash;&gt;-->
+<!--&lt;!&ndash;            <img id="image2" style="max-width: 100%; max-height: 100%;">&ndash;&gt;-->
+<!--&lt;!&ndash;        </div>&ndash;&gt;-->
+<!--&lt;!&ndash;    </div>&ndash;&gt;-->
+
+<!--&lt;!&ndash;    <div style="height: 20px;"></div>&ndash;&gt;-->
+<!--&lt;!&ndash;    <div>&ndash;&gt;-->
+<!--&lt;!&ndash;        <div style="width: 20px;"></div>&ndash;&gt;-->
+<!--&lt;!&ndash;        <div style="width: 5%; float: left;">&ndash;&gt;-->
+<!--&lt;!&ndash;            <div style="text-decoration: underline;">Serialized PDFA (JSON):</div>&ndash;&gt;-->
+<!--&lt;!&ndash;            <textarea id="output" rows="20" readonly="readonly" style="background-color: LightGray;"></textarea>&ndash;&gt;-->
+<!--&lt;!&ndash;        </div>&ndash;&gt;-->
+<!--&lt;!&ndash;    </div>&ndash;&gt;-->
+
+<!--&lt;!&ndash;    <div class="alert" style="display: none;">&ndash;&gt;-->
+<!--&lt;!&ndash;        <p></p>&ndash;&gt;-->
+<!--&lt;!&ndash;    </div>&ndash;&gt;-->
+<!--</body>-->
+<!--</html>-->

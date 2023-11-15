@@ -52,9 +52,9 @@ app.layout = html.Div([
                 {'label': 'mp_forall_forall', 'value': 'mp_forall_forall'},
             ],
             labelStyle={'display': 'block'},
-            value="forall_exists"
+            value="mp_forall_exists"
         ),
-    ], className="box"),
+    ], hidden=False, className="box"),
     html.Button("Translate", id="submit-button", className="box-title"),
     # html.Div([
     #     html.Button("Translate and Download", id="download-button", className="box-title"),

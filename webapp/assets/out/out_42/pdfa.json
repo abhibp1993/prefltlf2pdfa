@@ -1,0 +1,139 @@
+{
+  "__type__": "PrefAutomaton",
+  "__value__": {
+    "states": {
+      "0": {
+        "__type__": "tuple",
+        "__value__": [
+          1,
+          1
+        ]
+      },
+      "1": {
+        "__type__": "tuple",
+        "__value__": [
+          1,
+          2
+        ]
+      },
+      "2": {
+        "__type__": "tuple",
+        "__value__": [
+          2,
+          2
+        ]
+      },
+      "3": {
+        "__type__": "tuple",
+        "__value__": [
+          2,
+          1
+        ]
+      }
+    },
+    "atoms": [
+      "b",
+      "a"
+    ],
+    "alphabet": null,
+    "transitions": {
+      "0": {
+        "!a & !b": 0,
+        "a & !b": 3,
+        "b & !a": 1,
+        "a & b": 2
+      },
+      "1": {
+        "!a": 1,
+        "a": 2
+      },
+      "2": {
+        "true": 2
+      },
+      "3": {
+        "!b": 3,
+        "b": 2
+      }
+    },
+    "init_state": 0,
+    "pref_graph": {
+      "nodes": {
+        "0": {
+          "name": {
+            "__type__": "tuple",
+            "__value__": [
+              0,
+              0
+            ]
+          },
+          "partition": {
+            "__type__": "set",
+            "__value__": [
+              {
+                "__type__": "tuple",
+                "__value__": [
+                  1,
+                  1
+                ]
+              }
+            ]
+          }
+        },
+        "1": {
+          "name": {
+            "__type__": "tuple",
+            "__value__": [
+              0,
+              1
+            ]
+          },
+          "partition": {
+            "__type__": "set",
+            "__value__": [
+              {
+                "__type__": "tuple",
+                "__value__": [
+                  1,
+                  2
+                ]
+              }
+            ]
+          }
+        },
+        "2": {
+          "name": {
+            "__type__": "tuple",
+            "__value__": [
+              1,
+              0
+            ]
+          },
+          "partition": {
+            "__type__": "set",
+            "__value__": [
+              {
+                "__type__": "tuple",
+                "__value__": [
+                  2,
+                  1
+                ]
+              },
+              {
+                "__type__": "tuple",
+                "__value__": [
+                  2,
+                  2
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "edges": {
+        "0": 2,
+        "1": 2,
+        "2": 2
+      }
+    }
+  }
+}

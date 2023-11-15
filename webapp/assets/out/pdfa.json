@@ -1,0 +1,110 @@
+{
+  "__type__": "PrefAutomaton",
+  "__value__": {
+    "states": {
+      "0": {
+        "__type__": "tuple",
+        "__value__": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "1": {
+        "__type__": "tuple",
+        "__value__": [
+          2,
+          5,
+          2,
+          4
+        ]
+      }
+    },
+    "atoms": [
+      "t",
+      "d",
+      "o"
+    ],
+    "alphabet": [
+      {
+        "__type__": "set",
+        "__value__": []
+      },
+      {
+        "__type__": "set",
+        "__value__": [
+          "t"
+        ]
+      }
+    ],
+    "transitions": {
+      "0": {
+        "t & !d & !o": 1,
+        "!d & !o & !t": 0
+      },
+      "1": {
+        "!d & !o": 1
+      }
+    },
+    "init_state": 0,
+    "pref_graph": {
+      "nodes": {
+        "0": {
+          "name": {
+            "__type__": "tuple",
+            "__value__": [
+              0,
+              0,
+              0,
+              1
+            ]
+          },
+          "partition": {
+            "__type__": "set",
+            "__value__": [
+              {
+                "__type__": "tuple",
+                "__value__": [
+                  1,
+                  1,
+                  1,
+                  1
+                ]
+              }
+            ]
+          }
+        },
+        "1": {
+          "name": {
+            "__type__": "tuple",
+            "__value__": [
+              0,
+              0,
+              1,
+              0
+            ]
+          },
+          "partition": {
+            "__type__": "set",
+            "__value__": [
+              {
+                "__type__": "tuple",
+                "__value__": [
+                  2,
+                  5,
+                  2,
+                  4
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "edges": {
+        "0": 1,
+        "1": 1
+      }
+    }
+  }
+}

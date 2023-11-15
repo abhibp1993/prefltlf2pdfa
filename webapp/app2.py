@@ -1,26 +1,37 @@
+import os
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
 import ast
 import os
-import pathlib
-import pprint
-import zipfile
-
 import dash
-import dash_core_components as dcc
-import dash_html_components as html
-import json
+import dash_bootstrap_components as dbc
+# import dash_core_components as dcc
+import zipfile
 
 import ioutils
 import translate2
 import vizutils
 
-# from dash.dependencies import Input, Output, State
-import dash_bootstrap_components as dbc
+from dash import html
+from dash import dcc
+from loguru import logger
+# logger.add(os.path.join("assets", "out", "app.log"), rotation="20 MB")
+logger.info("Starting application...")
 
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.GRID, dbc.themes.BOOTSTRAP])
+app = dash.Dash(
+    __name__,
+    # requests_pathname_prefix="/home/prefltlf",
+    external_stylesheets=[dbc.themes.GRID, dbc.themes.BOOTSTRAP, "styles.css"]
+)
 server = app.server
+app.css.config.serve_locally = True
+app.scripts.config.serve_locally = True
 
 # Reference the external CSS file
-app.css.append_css({"external_url": "styles.css"})
+# app.css.append_css({"external_url": "styles.css"})
 
 # Layout
 app.layout = html.Div([
@@ -191,6 +202,7 @@ app.layout = html.Div([
     ]),
     dbc.Alert(id="alert", is_open=False, duration=4000, color="danger", className="alert-top"),
 ])  # End of layout
+logger.info("exiting layout")
 
 
 @app.callback(
@@ -220,7 +232,8 @@ def translate(n_clicks, text_spec, text_alphabet, dfa2png_options, dfa2png_engin
               pdfa2png_engine):
     # Check if the button was clicked
     if n_clicks == 0 or n_clicks is None:
-        return "", "", "", False, ""
+        logger.info("init button click")
+        return "", "", "", False, "", ""
 
     try:
         # If no specification is given, terminate
@@ -300,4 +313,5 @@ def translate(n_clicks, text_spec, text_alphabet, dfa2png_options, dfa2png_engin
         )
 
     except Exception as e:
+        logger.exception(str(e))
         return "", "", "", True, dbc.Alert(str(e), color="danger"), ""
