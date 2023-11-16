@@ -143,15 +143,20 @@ class PrefLTLf:
 
         # Parse header.
         num_ltlf = self._parse_header(raw_spec)
+        logger.info(f"num_ltlf={num_ltlf}")
 
         # Parse LTLf formulas
         self.atoms, self.phi = self._parse_ltlf(raw_spec[1:num_ltlf + 1])
+        logger.info(f"atoms={self.atoms}")
+        logger.info(f"phi={self.phi}")
 
         # Parse preference relation
         relation_spec = self._parse_relation(raw_spec[num_ltlf + 1:])
+        logger.info(f"relation_spec={relation_spec}")
 
         # Build preorder
         self.relation = self._build_preorder(relation_spec)
+        logger.info(f"relation={self.relation}")
 
     def translate(self, semantics="mp_forall_exists"):
         # Define preference automaton and set basic attributes
@@ -162,6 +167,8 @@ class PrefLTLf:
         # Translate LTLf formulas in self.phi to DFAs
         self.dfa = [self._ltlf2dfa(ltlf) for ltlf in self.phi]
         assert len(self.dfa) >= 2, f"PrefLTLf spec must have at least two LTLf formulas."
+        for dfa in self.dfa:
+            logger.info(f"dfa={dfa}")
 
         # Compute union product of DFAs
         self._construct_underlying_graph(aut)
@@ -348,9 +355,11 @@ class PrefLTLf:
     def _ltlf2dfa(self, ltlf_formula):
         # Use LTLf2DFA to convert LTLf formula to DFA.
         dot = ltlf_formula.to_dfa()
+        logger.info(f"{ltlf_formula=}, dot={dot}")
 
         # Convert dot to networkx MultiDiGraph.
         dot_graph = nx_agraph.from_agraph(pygraphviz.AGraph(dot))
+        logger.info(f"{ltlf_formula=}, dot={dot_graph}")
 
         # Construct DFA dictionary using networkx MultiDiGraph.
         dfa = dict()
@@ -364,7 +373,7 @@ class PrefLTLf:
             if u == "init":
                 continue
 
-            u = int(u)
+            u = int(float(u))
             dfa["states"].add(u)
             dfa["transitions"][u] = dict()
             if d.get('shape', None) == 'doublecircle':
@@ -375,11 +384,12 @@ class PrefLTLf:
                 dfa["init_state"] = int(v)
                 continue
 
-            u = int(u)
-            v = int(v)
+            u = int(float(u))
+            v = int(float(v))
 
             dfa["transitions"][u][d['label']] = v
 
+        logger.info(f"ltlf_formula={ltlf_formula}, dfa={dfa}")
         return dfa
 
 
