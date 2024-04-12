@@ -152,7 +152,7 @@ options = dbc.Container(
                             {'label': 'mp-exists-forall', 'value': 'semantics_mp_ea'},
                             {'label': 'mp-forall-forall', 'value': 'semantics_mp_aa'},
                         ],
-                        value='forall-exists',
+                        value=None,
                         style={'width': 'True', "text-align": 'left'}  # Align text to the left within the dropdown
                     )
                 ])
@@ -306,6 +306,7 @@ app.layout = html.Div(
 )
 
 
+
 def generate_input_dict(text_spec, text_alphabet, chklist_options, ddl_semantics):
     input_dict = dict()
     input_dict["spec"] = text_spec
@@ -324,6 +325,7 @@ def generate_input_dict(text_spec, text_alphabet, chklist_options, ddl_semantics
 
     return input_dict
 
+
 @app.callback(
     [
         dash.dependencies.Output("img_semi_aut", "src"),
@@ -333,62 +335,13 @@ def generate_input_dict(text_spec, text_alphabet, chklist_options, ddl_semantics
         dash.dependencies.Output("alert", "children"),
     ],
     [
-        dash.dependencies.Input("btn_translate", "n_clicks"),
-    ],
-    [
-        dash.dependencies.State("txt_spec", "value"),
-        dash.dependencies.State("txt_alphabet", "value"),
-        dash.dependencies.State("chklist_options", "value"),
-        # dash.dependencies.State("ddl_semantics", "value"),
-        # dash.dependencies.State("dfa2png-engine", "value"),
-        # dash.dependencies.State("spec2png-options", "value"),
-        # dash.dependencies.State("spec2png-engine", "value"),
-        # dash.dependencies.State("pdfa2png-options", "value"),
-        # dash.dependencies.State("pdfa2png-engine", "value"),
-    ]
-)
-# def translate(n_clicks, text_spec, text_alphabet, chklist_options, ddl_semantics):
-def translate(n_clicks, text_spec, text_alphabet, chklist_options):
-    print("test")
-    # Check if the button was clicked
-    if n_clicks == 0 or n_clicks is None:
-        logger.info("init button click")
-        return "", "", False, "", ""
-
-    try:
-        # Define input
-        print(text_spec, text_alphabet, chklist_options)
-        # input_dict = generate_input_dict(text_spec, text_alphabet, chklist_options, ddl_semantics)
-        input_dict = generate_input_dict(text_spec, text_alphabet, chklist_options, None)
-        return "", "", True, "success", f"{input_dict}"
-
-    except Exception as err:
-        return "", "", True, "danger", f"{repr(err)}"
-        # return "", "", True, "danger", dbc.Alert(f"{repr(err)}", color="danger")
-
-@app.callback(
-    [
-        dash.dependencies.Output("img_semi_aut", "src"),
-        dash.dependencies.Output("img_pref_graph", "src"),
-        # dash.dependencies.Output("output", "value"),
-        dash.dependencies.Output("alert", "is_open"),
-        dash.dependencies.Output("alert", "color"),
-        dash.dependencies.Output("alert", "children"),
-        # dash.dependencies.Output("dynamic-link", "href"),
-    ],
-    [
-        dash.dependencies.Input("btn_translate_and_download", "n_clicks"),
+        dash.dependencies.Input("btn_translate_download", "n_clicks"),
     ],
     [
         dash.dependencies.State("txt_spec", "value"),
         dash.dependencies.State("txt_alphabet", "value"),
         dash.dependencies.State("chklist_options", "value"),
         dash.dependencies.State("ddl_semantics", "value"),
-        # dash.dependencies.State("dfa2png-engine", "value"),
-        # dash.dependencies.State("spec2png-options", "value"),
-        # dash.dependencies.State("spec2png-engine", "value"),
-        # dash.dependencies.State("pdfa2png-options", "value"),
-        # dash.dependencies.State("pdfa2png-engine", "value"),
     ]
 )
 def translate_and_download(n_clicks, text_spec, text_alphabet, chklist_options, ddl_semantics):
@@ -399,95 +352,184 @@ def translate_and_download(n_clicks, text_spec, text_alphabet, chklist_options, 
 
     try:
         # Define input
+        print(text_spec, text_alphabet, chklist_options, ddl_semantics)
         input_dict = generate_input_dict(text_spec, text_alphabet, chklist_options, ddl_semantics)
+        # input_dict = generate_input_dict(text_spec, text_alphabet, chklist_options, None)
         return "", "", True, "success", f"{input_dict}"
 
     except Exception as err:
         return "", "", True, "danger", f"{repr(err)}"
         # return "", "", True, "danger", dbc.Alert(f"{repr(err)}", color="danger")
 
-    # try:
-    #     # If no specification is given, terminate
-    #     if text_spec is None:
-    #         return "", "", "", True, dbc.Alert("No specification given", color="danger"), ""
-    #
-    #     # Parse alphabet
-    #     if text_alphabet is not None:
-    #         alphabet = [ast.literal_eval(s.strip()) for s in text_alphabet.split("\n")]
-    #     else:
-    #         alphabet = None
-    #
-    #     # Parse specification and generate model
-    #     spec = translate2.PrefLTLf(text_spec, alphabet=alphabet)
-    #
-    #     # Translate to PDFA
-    #     pdfa = spec.translate(semantics=translate2.semantics_mp_forall_exists)
-    #
-    #     # Generate images: determine user options
-    #     dfa2png_enable = "dfa2png-enable" in dfa2png_options
-    #     dfa2png_engine = dfa2png_engine.split("-")[1]
-    #
-    #     spec2png_enable = "spec2png-enable" in spec2png_options
-    #     spec2png_show_formula = "spec2png-show-formula" in spec2png_options
-    #     spec2png_engine = spec2png_engine.split("-")[1]
-    #
-    #     pdfa2png_state_names = "pdfa2png-state-names" in pdfa2png_options
-    #     pdfa2png_node_class = "pdfa2png-node-class" in pdfa2png_options
-    #     pdfa2png_engine = pdfa2png_engine.split("-")[1]
-    #
-    #     # Set up folders for storing output
-    #     out_dir = os.path.join("assets", "out")
-    #
-    #     # Create a new folder
-    #     existing_folders = [d for d in os.listdir(out_dir) if os.path.isdir(os.path.join(out_dir, d))]
-    #     folder_indices = [int(folder.split('_')[1]) for folder in existing_folders if folder.startswith('out_')]
-    #     next_index = max(folder_indices) + 1 if len(folder_indices) > 0 else 0
-    #     os.mkdir(os.path.join(out_dir, f"out_{next_index}"))
-    #
-    #     # Generate DFA images
-    #     if dfa2png_enable:
-    #         for i in range(len(spec.dfa)):
-    #             vizutils.dfa2png(spec.dfa[i], os.path.join(out_dir, f"out_{next_index}", f"dfa_{i}.png"),
-    #                              engine=dfa2png_engine)
-    #
-    #     # Generate PrefLTLf model image
-    #     if spec2png_enable:
-    #         vizutils.spec2png(spec, os.path.join(out_dir, f"out_{next_index}", f"model.png"), engine=spec2png_engine,
-    #                           show_formula=spec2png_show_formula)
-    #
-    #     # Save PDFA serialization
-    #     ioutils.to_json(os.path.join(out_dir, f"out_{next_index}", f"pdfa.json"), pdfa)
-    #
-    #     # Generate PDFA images
-    #     vizutils.pdfa2png(
-    #         pdfa,
-    #         os.path.join(out_dir, f"out_{next_index}", f"pdfa.png"),
-    #         engine=pdfa2png_engine,
-    #         show_state_name=pdfa2png_state_names,
-    #         show_node_class=pdfa2png_node_class
-    #     )
-    #
-    #     # Generate zip folder for download
-    #     with zipfile.ZipFile(os.path.join(out_dir, f"out_{next_index}.zip"), 'w', zipfile.ZIP_DEFLATED) as zipf:
-    #         for root, _, files in os.walk(os.path.join(out_dir, f"out_{next_index}")):
-    #             for file in files:
-    #                 file_path = os.path.join(root, file)
-    #                 arcname = os.path.relpath(file_path, os.path.join(out_dir, f"out_{next_index}"))
-    #                 zipf.write(file_path, arcname)
-    #
-    #     return (
-    #         os.path.join(out_dir, f"out_{next_index}", f"pdfa_dfa.png"),
-    #         os.path.join(out_dir, f"out_{next_index}", f"pdfa_pref_graph.png"),
-    #         ioutils.to_json_str(pdfa),
-    #         True,
-    #         dbc.Alert("Translation Successful. Download link updated.", color="success"),
-    #         os.path.join(out_dir, f"out_{next_index}.zip")
-    #     )
-    #
-    # except Exception as e:
-    #     logger.exception(str(e))
-    #     return "", "", "", True, dbc.Alert(str(e), color="danger"), ""
 
+
+
+# @app.callback(
+#     [
+#         dash.dependencies.Output("img_semi_aut", "src"),
+#         dash.dependencies.Output("img_pref_graph", "src"),
+#         dash.dependencies.Output("alert", "is_open"),
+#         dash.dependencies.Output("alert", "color"),
+#         dash.dependencies.Output("alert", "children"),
+#     ],
+#     [
+#         dash.dependencies.Input("btn_translate", "n_clicks"),
+#     ],
+#     [
+#         dash.dependencies.State("txt_spec", "value"),
+#         dash.dependencies.State("txt_alphabet", "value"),
+#         dash.dependencies.State("chklist_options", "value"),
+#         # dash.dependencies.State("ddl_semantics", "value"),
+#         # dash.dependencies.State("dfa2png-engine", "value"),
+#         # dash.dependencies.State("spec2png-options", "value"),
+#         # dash.dependencies.State("spec2png-engine", "value"),
+#         # dash.dependencies.State("pdfa2png-options", "value"),
+#         # dash.dependencies.State("pdfa2png-engine", "value"),
+#     ]
+# )
+# def translate(n_clicks, text_spec, text_alphabet, chklist_options, ddl_semantics):
+# # def translate(n_clicks, text_spec, text_alphabet, chklist_options):
+#     print("test")
+#     # Check if the button was clicked
+#     if n_clicks == 0 or n_clicks is None:
+#         logger.info("init button click")
+#         return "", "", False, "", ""
+#
+#     try:
+#         # Define input
+#         print(text_spec, text_alphabet, chklist_options)
+#         # input_dict = generate_input_dict(text_spec, text_alphabet, chklist_options, ddl_semantics)
+#         input_dict = generate_input_dict(text_spec, text_alphabet, chklist_options, None)
+#         return "", "", True, "success", f"{input_dict}"
+#
+#     except Exception as err:
+#         return "", "", True, "danger", f"{repr(err)}"
+#         # return "", "", True, "danger", dbc.Alert(f"{repr(err)}", color="danger")
+
+
+#
+# @app.callback(
+#     [
+#         dash.dependencies.Output("img_semi_aut", "src"),
+#         dash.dependencies.Output("img_pref_graph", "src"),
+#         # dash.dependencies.Output("output", "value"),
+#         dash.dependencies.Output("alert", "is_open"),
+#         dash.dependencies.Output("alert", "color"),
+#         dash.dependencies.Output("alert", "children"),
+#         # dash.dependencies.Output("dynamic-link", "href"),
+#     ],
+#     [
+#         dash.dependencies.Input("btn_translate_and_download", "n_clicks"),
+#     ],
+#     [
+#         dash.dependencies.State("txt_spec", "value"),
+#         dash.dependencies.State("txt_alphabet", "value"),
+#         dash.dependencies.State("chklist_options", "value"),
+#         dash.dependencies.State("ddl_semantics", "value"),
+#         # dash.dependencies.State("dfa2png-engine", "value"),
+#         # dash.dependencies.State("spec2png-options", "value"),
+#         # dash.dependencies.State("spec2png-engine", "value"),
+#         # dash.dependencies.State("pdfa2png-options", "value"),
+#         # dash.dependencies.State("pdfa2png-engine", "value"),
+#     ]
+# )
+# def translate_and_download(n_clicks, text_spec, text_alphabet, chklist_options, ddl_semantics):
+#     # Check if the button was clicked
+#     if n_clicks == 0 or n_clicks is None:
+#         logger.info("init button click")
+#         return "", "", False, "", ""
+#
+#     try:
+#         # Define input
+#         input_dict = generate_input_dict(text_spec, text_alphabet, chklist_options, ddl_semantics)
+#         return "", "", True, "success", f"{input_dict}"
+#
+#     except Exception as err:
+#         return "", "", True, "danger", f"{repr(err)}"
+#         # return "", "", True, "danger", dbc.Alert(f"{repr(err)}", color="danger")
+#
+#     # try:
+#     #     # If no specification is given, terminate
+#     #     if text_spec is None:
+#     #         return "", "", "", True, dbc.Alert("No specification given", color="danger"), ""
+#     #
+#     #     # Parse alphabet
+#     #     if text_alphabet is not None:
+#     #         alphabet = [ast.literal_eval(s.strip()) for s in text_alphabet.split("\n")]
+#     #     else:
+#     #         alphabet = None
+#     #
+#     #     # Parse specification and generate model
+#     #     spec = translate2.PrefLTLf(text_spec, alphabet=alphabet)
+#     #
+#     #     # Translate to PDFA
+#     #     pdfa = spec.translate(semantics=translate2.semantics_mp_forall_exists)
+#     #
+#     #     # Generate images: determine user options
+#     #     dfa2png_enable = "dfa2png-enable" in dfa2png_options
+#     #     dfa2png_engine = dfa2png_engine.split("-")[1]
+#     #
+#     #     spec2png_enable = "spec2png-enable" in spec2png_options
+#     #     spec2png_show_formula = "spec2png-show-formula" in spec2png_options
+#     #     spec2png_engine = spec2png_engine.split("-")[1]
+#     #
+#     #     pdfa2png_state_names = "pdfa2png-state-names" in pdfa2png_options
+#     #     pdfa2png_node_class = "pdfa2png-node-class" in pdfa2png_options
+#     #     pdfa2png_engine = pdfa2png_engine.split("-")[1]
+#     #
+#     #     # Set up folders for storing output
+#     #     out_dir = os.path.join("assets", "out")
+#     #
+#     #     # Create a new folder
+#     #     existing_folders = [d for d in os.listdir(out_dir) if os.path.isdir(os.path.join(out_dir, d))]
+#     #     folder_indices = [int(folder.split('_')[1]) for folder in existing_folders if folder.startswith('out_')]
+#     #     next_index = max(folder_indices) + 1 if len(folder_indices) > 0 else 0
+#     #     os.mkdir(os.path.join(out_dir, f"out_{next_index}"))
+#     #
+#     #     # Generate DFA images
+#     #     if dfa2png_enable:
+#     #         for i in range(len(spec.dfa)):
+#     #             vizutils.dfa2png(spec.dfa[i], os.path.join(out_dir, f"out_{next_index}", f"dfa_{i}.png"),
+#     #                              engine=dfa2png_engine)
+#     #
+#     #     # Generate PrefLTLf model image
+#     #     if spec2png_enable:
+#     #         vizutils.spec2png(spec, os.path.join(out_dir, f"out_{next_index}", f"model.png"), engine=spec2png_engine,
+#     #                           show_formula=spec2png_show_formula)
+#     #
+#     #     # Save PDFA serialization
+#     #     ioutils.to_json(os.path.join(out_dir, f"out_{next_index}", f"pdfa.json"), pdfa)
+#     #
+#     #     # Generate PDFA images
+#     #     vizutils.pdfa2png(
+#     #         pdfa,
+#     #         os.path.join(out_dir, f"out_{next_index}", f"pdfa.png"),
+#     #         engine=pdfa2png_engine,
+#     #         show_state_name=pdfa2png_state_names,
+#     #         show_node_class=pdfa2png_node_class
+#     #     )
+#     #
+#     #     # Generate zip folder for download
+#     #     with zipfile.ZipFile(os.path.join(out_dir, f"out_{next_index}.zip"), 'w', zipfile.ZIP_DEFLATED) as zipf:
+#     #         for root, _, files in os.walk(os.path.join(out_dir, f"out_{next_index}")):
+#     #             for file in files:
+#     #                 file_path = os.path.join(root, file)
+#     #                 arcname = os.path.relpath(file_path, os.path.join(out_dir, f"out_{next_index}"))
+#     #                 zipf.write(file_path, arcname)
+#     #
+#     #     return (
+#     #         os.path.join(out_dir, f"out_{next_index}", f"pdfa_dfa.png"),
+#     #         os.path.join(out_dir, f"out_{next_index}", f"pdfa_pref_graph.png"),
+#     #         ioutils.to_json_str(pdfa),
+#     #         True,
+#     #         dbc.Alert("Translation Successful. Download link updated.", color="success"),
+#     #         os.path.join(out_dir, f"out_{next_index}.zip")
+#     #     )
+#     #
+#     # except Exception as e:
+#     #     logger.exception(str(e))
+#     #     return "", "", "", True, dbc.Alert(str(e), color="danger"), ""
+#
 
 @app.callback(
     dash.dependencies.Output("collapse", "is_open"),
