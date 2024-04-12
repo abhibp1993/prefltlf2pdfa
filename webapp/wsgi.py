@@ -14,4 +14,4 @@ logger.info(sys.path)
 # logger.info(app.get_asset_url("app.log"))
 
 if __name__ == "__main__":
-    app.run(port=5080)
+    app.run(port=5080, debug=True)
