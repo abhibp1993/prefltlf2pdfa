@@ -39,14 +39,22 @@ app.scripts.config.serve_locally = True
 # Navbar
 navbar = dbc.NavbarSimple(
     children=[
-        dbc.NavItem(dbc.NavLink("Docs", href="/docs")),
-        dbc.NavItem(dbc.NavLink("GitHub", href="https://github.com/abhibp1993/prefltlf2pdfa/")),
-        dbc.NavItem(dbc.NavLink("About", href="/about")),
+        dbc.NavItem(dbc.NavLink("Docs", href="/docs", style={"color": "white"})),
+        dbc.NavItem(
+            dbc.NavLink(
+                "GitHub",
+                href="https://github.com/abhibp1993/prefltlf2pdfa/",
+                style={"color": "white"}
+            )
+        ),
+        dbc.NavItem(dbc.NavLink("About", href="/about", style={"color": "white"})),
     ],
     brand="prefltlf2pdfa translator",
     brand_href="/",
     color="primary",
+    # color="#A7C7E7",
     dark=True,
+    style={"font-weight": "bold", "color": "white"}
 )
 
 # Specification Input
@@ -59,7 +67,7 @@ F(c)
 >, 0, 2
 """
 spec = dcc.Textarea(
-    id='spec_input',
+    id='txt_spec',
     placeholder=spec_placeholder,
     style={'width': '60%', 'height': '200px'}
 )
@@ -75,7 +83,7 @@ atoms = dbc.Container(
     [
         dbc.Button(
             "Click to modify acceptable symbols",
-            id="collapse-button",
+            id="btn_collapse",
             color="primary",
             className="mb-3",
         ),
@@ -88,7 +96,7 @@ atoms = dbc.Container(
                 ),
                 html.Br(),
                 dcc.Textarea(
-                    id='atoms_input',
+                    id='txt_atoms',
                     placeholder=atoms_placeholder,
                     style={'width': '60%', 'height': '200px'}
                 )
@@ -116,9 +124,9 @@ options = dbc.Container(
         dcc.Checklist(
             id='checkboxes',
             options=[
-                {'label': 'Show Semi-Automaton States', 'value': 'checkbox1'},
-                {'label': 'Show Classes', 'value': 'checkbox2'},
-                {'label': 'Show Colored Semi-Automaton States', 'value': 'checkbox3'}
+                {'label': 'Show semi-automaton product states', 'value': 'chk_state'},
+                {'label': 'Show semi-automaton state class', 'value': 'chk_class'},
+                {'label': 'Color semi-automaton states by class', 'value': 'chk_color'}
             ],
             style={'display': 'inline-block', 'text-align': 'left'}
         ),
@@ -135,13 +143,16 @@ options = dbc.Container(
                 ]),
                 dbc.Col(style={"width": "True"}, children=[
                     dcc.Dropdown(
-                        id='dfa2png-engine',
+                        id='ddl_semantics',
                         options=[
-                            {'label': 'forall-exists', 'value': 'sem_1'},
-                            {'label': 'exists-forall', 'value': 'sem_2'},
-                            {'label': 'forall-forall', 'value': 'sem_3'},
+                            {'label': 'forall-exists', 'value': 'semantics_ae'},
+                            {'label': 'exists-forall', 'value': 'semantics_ea'},
+                            {'label': 'forall-forall', 'value': 'semantics_aa'},
+                            {'label': 'mp-forall-exists', 'value': 'semantics_mp_ae'},
+                            {'label': 'mp-exists-forall', 'value': 'semantics_mp_ea'},
+                            {'label': 'mp-forall-forall', 'value': 'semantics_mp_aa'},
                         ],
-                        value='dfa2png-dot',
+                        value='forall-exists',
                         style={'width': 'True', "text-align": 'left'}  # Align text to the left within the dropdown
                     )
                 ])
@@ -149,14 +160,13 @@ options = dbc.Container(
         )
     ],
 )
-
 # Translate Button
 translate_button = dbc.Container(
     style={'width': '200px', 'height': "30px"},
     children=[
         dbc.Button(
             "Translate to PDFA",
-            id="translate-button",
+            id="btn_translate",
             color="primary",
             className="mb-3",
             # style={},
@@ -169,7 +179,7 @@ translate_and_download_button = dbc.Container(
     children=[
         dbc.Button(
             "Translate and Download PDFA Files",
-            id="translate-and-download-button",
+            id="btn_translate_download",
             color="primary",
             className="mb-3",
             # style={},
@@ -192,7 +202,7 @@ semi_aut = dbc.Container(
                             className="box-title"
                         ),
                         html.Img(
-                            id="image1",
+                            id="img_semi_aut",
                             style={'max-width': '100%', 'max-height': '100%', 'display': 'block'},
                             src='https://via.placeholder.com/700'
                         ),
@@ -209,7 +219,7 @@ semi_aut = dbc.Container(
                             className="box-title"
                         ),
                         html.Img(
-                            id="image2",
+                            id="img_pref_graph",
                             style={'max-width': '100%', 'max-height': '100%', 'display': 'block'},
                             src='https://via.placeholder.com/500'
                         ),
