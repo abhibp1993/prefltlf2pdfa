@@ -8,7 +8,7 @@ import ioutils
 import os
 import pathlib
 import translate
-# import spot
+import spot
 
 from pprint import pprint
 

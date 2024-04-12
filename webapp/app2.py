@@ -24,7 +24,7 @@ logger.info("Starting application...")
 app = dash.Dash(
     __name__,
     # requests_pathname_prefix="/home/prefltlf",
-    external_stylesheets=[dbc.themes.GRID, dbc.themes.BOOTSTRAP, "styles.css"]
+    external_stylesheets=[dbc.themes.GRID, dbc.themes.COSMO, "styles.css"]
 )
 server = app.server
 app.css.config.serve_locally = True
