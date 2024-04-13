@@ -128,9 +128,9 @@ options = dbc.Container(
         dcc.Checklist(
             id='chklist_options',
             options=[
-                {'label': 'Show semi-automaton product states', 'value': 'chk_state'},
-                {'label': 'Show semi-automaton state class', 'value': 'chk_class'},
-                {'label': 'Color semi-automaton states by class', 'value': 'chk_color'}
+                {'label': '  Show semi-automaton product states', 'value': 'chk_state'},
+                {'label': '  Show semi-automaton state class', 'value': 'chk_class'},
+                {'label': '  Color semi-automaton states by class', 'value': 'chk_color'}
             ],
             style={'display': 'inline-block', 'text-align': 'left'}
         ),
@@ -328,7 +328,7 @@ def generate_input_dict(text_spec, text_alphabet, chklist_options, ddl_semantics
         "show_color": "chk_color" in chklist_options
     }
 
-    input_dict["ddl_semantics"] = ddl_semantics
+    input_dict["semantics"] = ddl_semantics
 
     return input_dict
 
@@ -379,13 +379,36 @@ def render(pdfa: translate2.PrefAutomaton, **kwargs):
 
 
 def translate_to_pdfa(input_dict):
+    # Parse alphabet
     if input_dict["alphabet"]:
         alphabet = [ast.literal_eval(s.strip()) for s in input_dict["alphabet"].split("\n")]
     else:
         alphabet = set()
+
+    # Parse specification and generate model
     phi = translate2.PrefLTLf(input_dict["spec"], alphabet=alphabet)
-    pdfa = phi.translate(semantics=translate2.semantics_mp_forall_exists)
-    return render(pdfa)
+
+    # Determine semantics function
+    if input_dict["semantics"] == "semantics_ae":
+        semantics = translate2.semantics_forall_exists
+    elif input_dict["semantics"] == "semantics_ea":
+        semantics = translate2.semantics_exists_forall
+    elif input_dict["semantics"] == "semantics_aa":
+        semantics = translate2.semantics_forall_forall
+    elif input_dict["semantics"] == "semantics_mp_ae":
+        semantics = translate2.semantics_mp_forall_exists
+    elif input_dict["semantics"] == "semantics_mp_ea":
+        semantics = translate2.semantics_mp_exists_forall
+    elif input_dict["semantics"] == "semantics_mp_aa":
+        semantics = translate2.semantics_mp_forall_forall
+    else:
+        raise ValueError("Invalid semantics selected.")
+
+    # Translate PrefLTLf to PDFA
+    pdfa = phi.translate(semantics=semantics)
+
+    # Return PDFA
+    return pdfa
 
 
 @app.callback(
@@ -428,8 +451,15 @@ def cb_btn_translate(
         # Define input
         input_dict = generate_input_dict(text_spec, text_alphabet, chklist_options, ddl_semantics)
 
+        # Input validation
+        if not input_dict["spec"]:
+            raise ValueError("No specification given.")
+        if not input_dict["semantics"]:
+            raise ValueError("No semantics selected.")
+
         # Generate images
-        semi_aut, pref_graph = translate_to_pdfa(input_dict)
+        pdfa = translate_to_pdfa(input_dict)
+        semi_aut, pref_graph = render(pdfa, **input_dict["options"])
         semi_aut = f"data:image/png;base64,{semi_aut.decode()}"
         pref_graph = f"data:image/png;base64,{pref_graph.decode()}"
         # print(semi_aut, pref_graph)
