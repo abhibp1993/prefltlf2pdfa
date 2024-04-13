@@ -333,23 +333,6 @@ def generate_input_dict(text_spec, text_alphabet, chklist_options, ddl_semantics
     return input_dict
 
 
-# @app.callback(
-#     [
-#         dash.dependencies.Output("alert", "is_open"),
-#         dash.dependencies.Output("alert", "color"),
-#         dash.dependencies.Output("alert", "children"),
-#     ],
-#     [
-#         dash.dependencies.Input("btn_translate", "n_clicks"),
-#         dash.dependencies.Input("btn_translate_download", "n_clicks"),
-#     ],
-#     [
-#     ]
-# )
-# def translate(btn1_clicks, btn2_clicks):
-#     changed_id = [p['prop_id'] for p in dash.callback_context.triggered][0]
-#     return True, "success", f"Button clicked {changed_id} {btn1_clicks} {btn2_clicks} times"
-
 def render(pdfa: translate2.PrefAutomaton, **kwargs):
     pref_graph = pdfa.pref_graph
 
@@ -436,7 +419,7 @@ def cb_btn_translate(
     if (btn_translate_clicks == 0 or btn_translate_clicks is None) and \
             (btn_translate_download_clicks == 0 or btn_translate_download_clicks is None):
         logger.info("init button click")
-        return "", "", False, "", ""
+        return 'https://via.placeholder.com/200', 'https://via.placeholder.com/200', False, "", ""
 
     # Identify which button was clicked
     changed_id = [p['prop_id'].split(".") for p in dash.callback_context.triggered][0][0]
