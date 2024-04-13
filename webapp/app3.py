@@ -2,6 +2,7 @@ import base64
 import os
 import pathlib
 import sys
+import seaborn as sns
 
 import pygraphviz
 
@@ -128,9 +129,10 @@ options = dbc.Container(
         dcc.Checklist(
             id='chklist_options',
             options=[
-                {'label': '  Show semi-automaton product states', 'value': 'chk_state'},
-                {'label': '  Show semi-automaton state class', 'value': 'chk_class'},
-                {'label': '  Color semi-automaton states by class', 'value': 'chk_color'}
+                {'label': '  Semi-automaton: Show components', 'value': 'chk_sa_state'},
+                {'label': '  Semi-automaton: Show preference partition', 'value': 'chk_class'},
+                {'label': '  Colored partitions', 'value': 'chk_color'},
+                {'label': '  Preference Graph: Show components', 'value': 'chk_pg_state'}
             ],
             style={'display': 'inline-block', 'text-align': 'left'}
         ),
@@ -323,9 +325,10 @@ def generate_input_dict(text_spec, text_alphabet, chklist_options, ddl_semantics
         chklist_options = []
 
     input_dict["options"] = {
-        "show_product_states": "chk_state" in chklist_options,
+        "show_sa_state": "chk_sa_state" in chklist_options,
         "show_class": "chk_class" in chklist_options,
-        "show_color": "chk_color" in chklist_options
+        "show_color": "chk_color" in chklist_options,
+        "show_pg_state": "chk_pg_state" in chklist_options
     }
 
     input_dict["semantics"] = ddl_semantics
@@ -333,7 +336,7 @@ def generate_input_dict(text_spec, text_alphabet, chklist_options, ddl_semantics
     return input_dict
 
 
-def render(pdfa: translate2.PrefAutomaton, **kwargs):
+def render2(pdfa: translate2.PrefAutomaton, **kwargs):
     pref_graph = pdfa.pref_graph
 
     # Create graph for underlying product DFA
@@ -367,11 +370,73 @@ def render(pdfa: translate2.PrefAutomaton, **kwargs):
 
     dot_pref.layout(prog=kwargs.get("engine", "dot"))
 
-    # # Generate graphs
-    # file = pathlib.Path(fpath)
-    # parent = file.parent
-    # stem = file.stem
-    # suffix = file.suffix
+    sa = dot_dfa.draw(path=None, format="png")
+    pg = dot_pref.draw(path=None, format="png")
+    return base64.b64encode(sa), base64.b64encode(pg)
+
+
+def render(pdfa: translate2.PrefAutomaton, phi, **kwargs):
+    # Extract options
+    sa_state = kwargs.get("show_sa_state", False)
+    sa_class = kwargs.get("show_class", False)
+    sa_color = kwargs.get("show_color", False)
+    pg_state = kwargs.get("show_pg_state", False)
+    logger.debug(f"Options: {sa_state}, {sa_class}, {sa_color}, {pg_state}")
+
+    # State to class mapping
+    if sa_class or sa_color:
+        state2class = dict()
+        for part_id, data in pdfa.pref_graph.nodes(data=True):
+            for st in data["partition"]:
+                state2class[st] = part_id
+
+    # Create color palette
+    parts = list(pdfa.pref_graph.nodes())
+    colors = sns.color_palette("pastel", len(pdfa.pref_graph.nodes()))
+    color_map = {part: colors[i] for i, part in enumerate(parts)}
+    print(color_map)
+
+    # Create graph to display semi-automaton
+    dot_dfa = pygraphviz.AGraph(directed=True)
+    for st, name in pdfa.get_states(name=True):
+        # Determine state name
+        st_label = name if sa_state else st
+        # Append state class if option enabled
+        st_label = f"{st_label}\n({state2class[name]})" if sa_class else st_label
+        # Add node
+        if sa_color:
+            color = color_map[state2class[name]]
+            color = '#{:02x}{:02x}{:02x}'.format(int(color[0] * 255), int(color[1] * 255), int(color[2] * 255))
+            dot_dfa.add_node(st, **{"label": st_label, "fillcolor": color, "style": "filled"})
+        else:
+            dot_dfa.add_node(st, **{"label": st_label})
+
+    dot_dfa.add_node("init", **{"label": "", "shape": "plaintext"})
+
+    for u, d in pdfa.transitions.items():
+        for label, v in d.items():
+            dot_dfa.add_edge(u, v, **{"label": label})
+    dot_dfa.add_edge("init", pdfa.init_state, **{"label": ""})
+
+    # Set drawing engine
+    dot_dfa.layout(prog=kwargs.get("engine", "dot"))
+
+    # Preference graph
+    dot_pref = pygraphviz.AGraph(directed=True)
+    for n, data in pdfa.pref_graph.nodes(data=True):
+        n_label = set(phi[i] for i in range(len(phi)) if data['name'][i] == 1) if pg_state else n
+        if sa_color:
+            color = color_map[n]
+            color = '#{:02x}{:02x}{:02x}'.format(int(color[0] * 255), int(color[1] * 255), int(color[2] * 255))
+        else:
+            color = "white"
+
+        dot_pref.add_node(n, **{"label": n_label, "fillcolor": color, "style": "filled"})
+
+    for u, v in pdfa.pref_graph.edges():
+        dot_pref.add_edge(u, v)
+
+    dot_pref.layout(prog=kwargs.get("engine", "dot"))
 
     sa = dot_dfa.draw(path=None, format="png")
     pg = dot_pref.draw(path=None, format="png")
@@ -408,7 +473,7 @@ def translate_to_pdfa(input_dict):
     pdfa = phi.translate(semantics=semantics)
 
     # Return PDFA
-    return pdfa
+    return phi, pdfa
 
 
 @app.callback(
@@ -458,8 +523,8 @@ def cb_btn_translate(
             raise ValueError("No semantics selected.")
 
         # Generate images
-        pdfa = translate_to_pdfa(input_dict)
-        semi_aut, pref_graph = render(pdfa, **input_dict["options"])
+        phi, pdfa = translate_to_pdfa(input_dict)
+        semi_aut, pref_graph = render(pdfa, phi=phi.phi, **input_dict["options"])
         semi_aut = f"data:image/png;base64,{semi_aut.decode()}"
         pref_graph = f"data:image/png;base64,{pref_graph.decode()}"
         # print(semi_aut, pref_graph)
