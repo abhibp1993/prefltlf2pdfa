@@ -1,5 +1,9 @@
+import base64
 import os
+import pathlib
 import sys
+
+import pygraphviz
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -267,12 +271,16 @@ app.layout = html.Div(
 
         # Options
         html.Br(),
-        dbc.ButtonGroup(
-            [
-                translate_button,
-                translate_and_download_button
-            ]
-        ),
+        dbc.Row([
+            translate_button,
+            translate_and_download_button
+        ]),
+        # dbc.ButtonGroup(
+        #     [
+        #         translate_button,
+        #         translate_and_download_button
+        #     ]
+        # ),
 
         # Semi-automaton
         html.Br(),
@@ -306,7 +314,6 @@ app.layout = html.Div(
 )
 
 
-
 def generate_input_dict(text_spec, text_alphabet, chklist_options, ddl_semantics):
     input_dict = dict()
     input_dict["spec"] = text_spec
@@ -326,6 +333,78 @@ def generate_input_dict(text_spec, text_alphabet, chklist_options, ddl_semantics
     return input_dict
 
 
+# @app.callback(
+#     [
+#         dash.dependencies.Output("alert", "is_open"),
+#         dash.dependencies.Output("alert", "color"),
+#         dash.dependencies.Output("alert", "children"),
+#     ],
+#     [
+#         dash.dependencies.Input("btn_translate", "n_clicks"),
+#         dash.dependencies.Input("btn_translate_download", "n_clicks"),
+#     ],
+#     [
+#     ]
+# )
+# def translate(btn1_clicks, btn2_clicks):
+#     changed_id = [p['prop_id'] for p in dash.callback_context.triggered][0]
+#     return True, "success", f"Button clicked {changed_id} {btn1_clicks} {btn2_clicks} times"
+
+def render(pdfa: translate2.PrefAutomaton, **kwargs):
+    pref_graph = pdfa.pref_graph
+
+    # Create graph for underlying product DFA
+    dot_dfa = pygraphviz.AGraph(directed=True)
+    for st, name in pdfa.get_states(name=True):
+        if kwargs.get("show_state_name", True):
+            dot_dfa.add_node(st, **{"label": name})
+        else:
+            dot_dfa.add_node(st, **{"label": st})
+
+    dot_dfa.add_node("init", **{"label": "", "shape": "plaintext"})
+
+    for u, d in pdfa.transitions.items():
+        for label, v in d.items():
+            dot_dfa.add_edge(u, v, **{"label": label})
+    dot_dfa.add_edge("init", pdfa.init_state, **{"label": ""})
+
+    # Set drawing engine
+    dot_dfa.layout(prog=kwargs.get("engine", "dot"))
+
+    # Preference graph
+    dot_pref = pygraphviz.AGraph(directed=True)
+    for n, data in pref_graph.nodes(data=True):
+        if kwargs.get("show_node_class", True):
+            dot_pref.add_node(n, **{"label": data['name']})
+        else:
+            dot_pref.add_node(n, **{"label": n})
+
+    for u, v in pref_graph.edges():
+        dot_pref.add_edge(u, v)
+
+    dot_pref.layout(prog=kwargs.get("engine", "dot"))
+
+    # # Generate graphs
+    # file = pathlib.Path(fpath)
+    # parent = file.parent
+    # stem = file.stem
+    # suffix = file.suffix
+
+    sa = dot_dfa.draw(path=None, format="png")
+    pg = dot_pref.draw(path=None, format="png")
+    return base64.b64encode(sa), base64.b64encode(pg)
+
+
+def translate_to_pdfa(input_dict):
+    if input_dict["alphabet"]:
+        alphabet = [ast.literal_eval(s.strip()) for s in input_dict["alphabet"].split("\n")]
+    else:
+        alphabet = set()
+    phi = translate2.PrefLTLf(input_dict["spec"], alphabet=alphabet)
+    pdfa = phi.translate(semantics=translate2.semantics_mp_forall_exists)
+    return render(pdfa)
+
+
 @app.callback(
     [
         dash.dependencies.Output("img_semi_aut", "src"),
@@ -335,6 +414,7 @@ def generate_input_dict(text_spec, text_alphabet, chklist_options, ddl_semantics
         dash.dependencies.Output("alert", "children"),
     ],
     [
+        dash.dependencies.Input("btn_translate", "n_clicks"),
         dash.dependencies.Input("btn_translate_download", "n_clicks"),
     ],
     [
@@ -344,24 +424,36 @@ def generate_input_dict(text_spec, text_alphabet, chklist_options, ddl_semantics
         dash.dependencies.State("ddl_semantics", "value"),
     ]
 )
-def translate_and_download(n_clicks, text_spec, text_alphabet, chklist_options, ddl_semantics):
+def cb_btn_translate(
+        btn_translate_clicks,
+        btn_translate_download_clicks,
+        text_spec,
+        text_alphabet,
+        chklist_options,
+        ddl_semantics
+):
     # Check if the button was clicked
-    if n_clicks == 0 or n_clicks is None:
+    if (btn_translate_clicks == 0 or btn_translate_clicks is None) and \
+            (btn_translate_download_clicks == 0 or btn_translate_download_clicks is None):
         logger.info("init button click")
         return "", "", False, "", ""
 
+    # Identify which button was clicked
+    changed_id = [p['prop_id'].split(".") for p in dash.callback_context.triggered][0][0]
+
     try:
         # Define input
-        print(text_spec, text_alphabet, chklist_options, ddl_semantics)
         input_dict = generate_input_dict(text_spec, text_alphabet, chklist_options, ddl_semantics)
-        # input_dict = generate_input_dict(text_spec, text_alphabet, chklist_options, None)
-        return "", "", True, "success", f"{input_dict}"
+
+        # Generate images
+        semi_aut, pref_graph = translate_to_pdfa(input_dict)
+        semi_aut = f"data:image/png;base64,{semi_aut.decode()}"
+        pref_graph = f"data:image/png;base64,{pref_graph.decode()}"
+        # print(semi_aut, pref_graph)
+        return semi_aut, pref_graph, False, "", ""
 
     except Exception as err:
         return "", "", True, "danger", f"{repr(err)}"
-        # return "", "", True, "danger", dbc.Alert(f"{repr(err)}", color="danger")
-
-
 
 
 # @app.callback(

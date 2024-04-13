@@ -295,7 +295,7 @@ class PrefLTLf:
                 # If alphabet is provided, require that at least one symbol enables the condition.
                 # if self.alphabet is None or all(not evaluate(spot.formula(formula), true_atoms) for true_atoms in alphabet):
                 if (
-                        self.alphabet is not None and
+                        self.alphabet and
                         all(
                             not cond.subs({atom: True if atom in true_atoms else False for atom in self.atoms})
                             for true_atoms in self.alphabet
