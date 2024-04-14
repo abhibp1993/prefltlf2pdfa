@@ -16,7 +16,7 @@ import dash_bootstrap_components as dbc
 import json
 import pygraphviz
 import seaborn as sns
-import translate2
+import translate
 
 from dash import html
 from dash import dcc
@@ -420,21 +420,21 @@ def translate_to_pdfa(input_dict):
         alphabet = set()
 
     # Parse specification and generate model
-    phi = translate2.PrefLTLf(input_dict["spec"], alphabet=alphabet)
+    phi = translate.PrefLTLf(input_dict["spec"], alphabet=alphabet)
 
     # Determine semantics function
     if input_dict["semantics"] == "semantics_ae":
-        semantics = translate2.semantics_forall_exists
+        semantics = translate.semantics_forall_exists
     elif input_dict["semantics"] == "semantics_ea":
-        semantics = translate2.semantics_exists_forall
+        semantics = translate.semantics_exists_forall
     elif input_dict["semantics"] == "semantics_aa":
-        semantics = translate2.semantics_forall_forall
+        semantics = translate.semantics_forall_forall
     elif input_dict["semantics"] == "semantics_mp_ae":
-        semantics = translate2.semantics_mp_forall_exists
+        semantics = translate.semantics_mp_forall_exists
     elif input_dict["semantics"] == "semantics_mp_ea":
-        semantics = translate2.semantics_mp_exists_forall
+        semantics = translate.semantics_mp_exists_forall
     elif input_dict["semantics"] == "semantics_mp_aa":
-        semantics = translate2.semantics_mp_forall_forall
+        semantics = translate.semantics_mp_forall_forall
     else:
         raise ValueError("Invalid semantics selected.")
 
@@ -445,7 +445,7 @@ def translate_to_pdfa(input_dict):
     return phi, pdfa
 
 
-def render(pdfa: translate2.PrefAutomaton, phi, **kwargs):
+def render(pdfa: translate.PrefAutomaton, phi, **kwargs):
     """
     Generates images for semi-automaton and preference graph.
 

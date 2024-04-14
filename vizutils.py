@@ -2,7 +2,8 @@ import os
 import pathlib
 import pygraphviz
 
-from translate2 import PrefAutomaton
+from translate import PrefAutomaton
+
 
 def dfa2png(dfa, fpath, **kwargs):
     # Create graph for underlying product DFA

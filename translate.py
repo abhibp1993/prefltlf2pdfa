@@ -1,597 +1,414 @@
-"""
-Translator from PrefLTLf to PDFA.
-"""
-import ast
-import copy
 import itertools
-import json
-import os
-import pathlib
+import networkx as nx
 import pprint
 import pygraphviz
-# import spot
 import sympy
 
 from ltlf2dfa.parser.ltlf import LTLfParser
 from loguru import logger
 from networkx.drawing import nx_agraph
-
-# from sympy import *
+from semantics import *
 
 PARSER = LTLfParser()
 
 
-# =================================================================================== #
-# PARSE FORMULA, BUILD PREFERENCE MODEL
-# =================================================================================== #
+class PrefLTLf:
+    MAXIMAL_SEMANTICS = [semantics_mp_forall_exists, semantics_mp_exists_forall, semantics_mp_forall_forall]
 
-def read_prefltlf(file):
-    """
-    Load a PrefLTLf formula from a file.
+    def __init__(self, f_str, alphabet=None, **kwargs):
+        self.f_str = f_str
+        self.atoms = set()  # Set of atomic propositions appearing in PrefLTLf specification
+        self.alphabet = list(alphabet) if alphabet is not None else None
+        self.phi = list()  # List (indexed set) of LTLf formulas appearing in PrefLTLf specification
+        self.dfa = list()  # List (indexed set) of LTLf formulas appearing in PrefLTLf specification
+        self.relation = set()  # Set of triples (PREF_TYPE, LTLf Formula, LTLf Formula) constructed based on given PrefLTLf spec
 
-    :return: (Tuple[set, set, set]) A tuple of (atoms, phi, preorder).
-    """
-    with open(file, 'r') as f:
-        lines = f.readlines()
-        return lines
+        if not kwargs.get("skip_parse", False):
+            self.parse()
 
+    def __str__(self):
+        return pprint.pformat(self.serialize())
 
-def parse_prefltlf(raw_spec):
-    """
-    Read a PrefLTLf formula from a file.
+    def __repr__(self):
+        return f"<PrefLTLf Formula at {id(self)}>"
 
-    :return: (set) A set of triples (PREF_TYPE, LTLf Formula, LTLf Formula).
-    """
-    if len(raw_spec) == 0:
-        raise EOFError("Empty PrefLTLf file.")
+    def serialize(self):
+        jsonable_dict = {
+            "f_str": self.f_str,
+            "atoms": list(self.atoms),
+            "alphabet": list(self.alphabet) if self.alphabet is not None else None,
+            "phi": [str(f) for f in self.phi],
+            "relation": list(self.relation)
+        }
+        return jsonable_dict
 
-    formula = set()
-    header = raw_spec[0].split(" ")
-    if len(header) == 1:
+    @classmethod
+    def deserialize(cls, obj_dict):
+        formula = cls(f_str=obj_dict["f_str"], skip_parse=True)
+        formula.atoms = set(obj_dict["atoms"])
+        formula.alphabet = set(obj_dict["alphabet"]) if obj_dict["alphabet"] is not None else None
+        formula.phi = obj_dict["phi"]
+        formula.relation = set(obj_dict["relation"])
+        return formula
+
+    @classmethod
+    def from_file(cls, fpath, alphabet=None):
+        with open(fpath, 'r') as f:
+            return cls(f.read(), alphabet=alphabet)
+
+    def parse(self):
+        # Separate formula string into lines
+        raw_spec = self.f_str.split("\n")
+        if len(raw_spec) == 0:
+            raise EOFError("Empty PrefLTLf file.")
+
+            # Parse header.
+        num_ltlf = self._parse_header(raw_spec)
+        logger.info(f"num_ltlf={num_ltlf}")
+
+        # Parse LTLf formulas
+        self.atoms, self.phi = self._parse_ltlf(raw_spec[1:num_ltlf + 1])
+        logger.info(f"atoms={self.atoms}")
+        logger.info(f"phi={self.phi}")
+
+        # Parse preference relation
+        relation_spec = self._parse_relation(raw_spec[num_ltlf + 1:])
+        logger.info(f"relation_spec={relation_spec}")
+
+        # Build preorder
+        self.relation = self._build_preorder(relation_spec)
+        logger.info(f"relation={self.relation}")
+
+    def translate(self, semantics="mp_forall_exists"):
+        # Define preference automaton and set basic attributes
+        aut = PrefAutomaton()
+        aut.atoms = self.atoms
+        aut.alphabet = self.alphabet
+
+        # Translate LTLf formulas in self.phi to DFAs
+        self.dfa = [self._ltlf2dfa(ltlf) for ltlf in self.phi]
+        assert len(self.dfa) >= 2, f"PrefLTLf spec must have at least two LTLf formulas."
+        for dfa in self.dfa:
+            logger.info(f"dfa={dfa}")
+
+            # Compute union product of DFAs
+        self._construct_underlying_graph(aut)
+
+        # Construct preference graph
+        self._construct_preference_graph(aut, semantics)
+
+        # Return preference automaton
+        return aut
+
+    def _parse_header(self, raw_spec):
+        header = raw_spec[0].split(" ")
+
+        if len(header) != 2:
+            raise TypeError(f"PrefLTLf specification must have header of format: `prefltlf <int>`. Received `{header}`.")
+
         formula_type = header[0].strip().lower()
         if formula_type != "prefltlf":
             raise ValueError(f"Not a PrefLTLf formula. Likely a '{formula_type}' formula.")
 
-        for i in range(1, len(raw_spec)):
-            stmt = raw_spec[i].split(",")
-            pref_type = stmt[0].strip()
-            assert pref_type in [">", ">=", "~", "<>"], f"The formula is ill-formed. Unrecognized operator `{pref_type}`"
-            left = PARSER(stmt[1].strip())
-            right = PARSER(stmt[2].strip())
-            formula.add((pref_type, left, right))
+        return int(header[1].strip())
 
-        return formula, list()
-
-    elif len(header) == 2:
-        formula_type = header[0].strip().lower()
-        if formula_type != "prefltlf":
-            raise ValueError(f"Not a PrefLTLf formula. Likely a '{formula_type}' formula.")
-
-        num_formulas = int(header[1].strip())
+    def _parse_ltlf(self, raw_spec):
+        atoms = set()
         phi = list()
-        for i in range(1, num_formulas + 1):
-            phi.append(PARSER(raw_spec[i].strip()))
+        for formula in raw_spec:
+            ltlf = PARSER(formula.strip())
+            phi.append(ltlf)
+            atoms.update(set(ltlf.find_labels()))
+        return atoms, phi
 
-        for i in range(num_formulas + 1, len(raw_spec)):
-            stmt = raw_spec[i].split(",")
-            pref_type = stmt[0].strip()
+    def _parse_relation(self, raw_spec):
+        relation = set()
+        for formula in raw_spec:
+            # Split line into operator, left formula, right formula.
+            rel = formula.split(",")
+
+            # Determine operator
+            pref_type = rel[0].strip()
             assert pref_type in [">", ">=", "~", "<>"], f"The formula is ill-formed. Unrecognized operator `{pref_type}`"
-            left = phi[int(stmt[1].strip())]
-            right = phi[int(stmt[2].strip())]
-            formula.add((pref_type, left, right))
 
-        return formula, phi
+            # Determine formulas
+            left = int(rel[1].strip())
+            right = int(rel[2].strip())
 
+            # Add relation
+            relation.add((pref_type, left, right))
 
-def build_prefltlf_model(formula, phi):
-    """
-    Build the preference model $$(\Phi, \trianglerighteq)$$ from a PrefLTLf formula.
+        return relation
 
-    :param formula: (set) A set of triples (PREF_TYPE, LTLf Formula, LTLf Formula).
-    :return: ($$(\Phi, \trianglerighteq)$$) A set of LTLf formulas $$\Phi$ and a set of triples (PREF_TYPE, LTLf, LTLf).
-    """
-    atoms = set()
-    ltlf = set()
-    preorder = set()
+    def _build_preorder(self, relation_spec):
+        preorder = set()
 
-    # Construct preorder.
-    # First, process the non-incomparability formulas because they add elements to preorder relation.
-    for pref_type, phi1, phi2 in (f for f in formula if f[0] != "<>"):
-        ltlf.add(phi1)
-        ltlf.add(phi2)
-        if pref_type == ">" or pref_type == ">=":
-            preorder.add((phi1, phi2))
+        # First, process the non-incomparability formulas because they add elements to preorder relation.
+        for pref_type, phi1, phi2 in (f for f in relation_spec if f[0] != "<>"):
+            assert 0 <= phi1 <= len(self.phi), f"Index of LTLf formula out of bounds. |Phi|={len(self.phi)}, phi_1={phi1}."
+            assert 0 <= phi2 <= len(self.phi), f"Index of LTLf formula out of bounds. |Phi|={len(self.phi)}, phi_2={phi2}."
 
-        if pref_type == "~":
-            preorder.add((phi1, phi2))
-            preorder.add((phi2, phi1))
+            if pref_type == ">" or pref_type == ">=":
+                preorder.add((phi1, phi2))
 
-    logger.debug(f"Constructed preorder except incomparability: \n{pprint.pformat(preorder)}")
+            if pref_type == "~":
+                preorder.add((phi1, phi2))
+                preorder.add((phi2, phi1))
 
-    # Second, process the incomparability formulas because it removes elements to preorder relation.
-    for pref_type, phi1, phi2 in (f for f in formula if f[0] == "<>"):
-        ltlf.add(phi1)
-        ltlf.add(phi2)
-        if (phi1, phi2) in preorder:
-            logger.warning(f"{(phi1, phi2)} is removed from preorder.")
-            preorder.remove((phi1, phi2))
+                # Second, process the incomparability formulas because it removes elements to preorder relation.
+        for pref_type, phi1, phi2 in (f for f in relation_spec if f[0] == "<>"):
+            assert 0 <= phi1 <= len(self.phi), f"Index of LTLf formula out of bounds. |Phi|={len(self.phi)}, phi_1={phi1}."
+            assert 0 <= phi2 <= len(self.phi), f"Index of LTLf formula out of bounds. |Phi|={len(self.phi)}, phi_2={phi2}."
 
-        if (phi2, phi1) in preorder:
-            logger.warning(f"{(phi2, phi1)} is removed from preorder.")
-            preorder.remove((phi2, phi1))
+            if (phi1, phi2) in preorder:
+                logger.warning(f"{(phi1, phi2)} is removed from preorder.")
+                preorder.remove((phi1, phi2))
 
-    logger.debug(f"Constructed preorder: \n{pprint.pformat(preorder)}")
+            if (phi2, phi1) in preorder:
+                logger.warning(f"{(phi2, phi1)} is removed from preorder.")
+                preorder.remove((phi2, phi1))
 
-    # Validate LTLf formulas identified by parser with those given in specification
-    if len(phi) == 0:
-        phi = list(ltlf)
-    else:
-        assert ltlf == set(phi), "LTLf formulas identified by parser do not match those given in specification."
+                # Reflexive closure
+        for i in range(len(self.phi)):
+            preorder.add((i, i))
 
-    # Construct atoms.
-    for formula_ in phi:
-        atoms.update(set(formula_.find_labels()))
+            # Transitive closure
+        preorder = self._transitive_closure(preorder)
 
-    # Make preorder reflexive.
-    for formula_ in phi:
-        preorder.add((formula_, formula_))
-    logger.debug(f"Reflexive closure of preorder: \n{pprint.pformat([(str(e1), str(e2)) for e1, e2 in preorder])}")
+        # Return preorder
+        return preorder
 
-    # Make preorder transitive.
-    preorder = transitive_closure(preorder)
-    logger.debug(f"Transitive closure of preorder: \n{pprint.pformat([(str(e1), str(e2)) for e1, e2 in preorder])}")
+    def _transitive_closure(self, preorder):
+        closure = set(preorder)
+        while True:
+            new_relations = set((x, w) for x, y in closure for q, w in closure if q == y)
+            closure_until_now = closure | new_relations
+            if closure_until_now == closure:
+                break
+            closure = closure_until_now
+        return closure
 
-    # Return model
-    return atoms, phi, preorder
+    def _construct_underlying_graph(self, aut):
+        dfa = self.dfa
 
+        # Initial state
+        q0 = tuple([dfa['init_state'] for dfa in dfa])
+        aut.init_state = aut.add_state(q0)
 
-def index_model(model):
-    """
-    Rewrites the preorder $$\trianglerighteq$$ by indexing the $$\Phi$$ set.
+        # Visit reachable states
+        queue = [q0]
+        explored = set()
+        transitions = set()
+        while queue:
+            # Visit next state
+            q = queue.pop()
+            explored.add(q)
 
-    :param model: (Tuple[set, set, set]) A tuple of (atoms, phi, preorder).
-    :return: (Tuple[set, set, set]) A tuple of (atoms, phi, preorder).
-    """
-    atoms, phi, preorder = model
-    phi = list(phi)
-    phi_index = {f: i for i, f in enumerate(phi)}
-    preorder_index = [(phi_index[f1], phi_index[f2]) for f1, f2 in preorder]
-    return list(atoms), phi, preorder_index
+            # Add state to preference automaton
+            aut.add_state(q)
 
+            # Add transitions to product dfa
+            # Pick one outgoing edge from each of the sub-DFA states in q.
+            for condition_on_edges in itertools.product(*[dfa[i]['transitions'][q[i]].keys() for i in range(len(dfa))]):
+                # Define condition for synchronous transition of selected edges (AND-ing of all conditions)
+                cond = sympy.sympify(("(" + ") & (".join(condition_on_edges) + ")").replace("!", "~")).simplify()
 
-def save_prefltlf_model(model, file):
-    """
-    Save the preference model to a file.
-    :param model: (Tuple[set, set, set]) A tuple of (atoms, phi, preorder).
-    :param file: (str or Path-like) The file to save the model. The file will be overwritten if it already exists. Format: JSON.
-    :return: None
-    """
-    atoms, phi, preorder = model
-    d = {
-        "atoms": atoms,
-        "phi": [str(f) for f in phi],
-        "preorder": preorder
-    }
-    with open(file, 'w') as f:
-        json.dump(d, f, indent=2)
+                # If alphabet is provided, require that at least one symbol enables the condition.
+                # if self.alphabet is None or all(not evaluate(spot.formula(formula), true_atoms) for true_atoms in alphabet):
+                if (
+                        self.alphabet and
+                        all(
+                            not cond.subs({atom: True if atom in true_atoms else False for atom in self.atoms})
+                            for true_atoms in self.alphabet
+                        )
+                ):
+                    continue
 
+                    # If label is false, then the synchronous transition is not valid.
+                if cond == sympy.false:
+                    continue
 
-def load_prefltlf_model(file):
-    with open(file, 'r') as f:
-        d = json.load(f)
-        atoms = d["atoms"]
-        phi = [PARSER(f) for f in d["phi"]]
-        preorder = [tuple(e) for e in d["preorder"]]
-    return atoms, phi, preorder
+                    # Otherwise, add transition
+                cond = (str(cond).replace("~", "!").
+                        replace("True", "true").
+                        replace("False", "false"))
 
+                q_next = tuple([dfa[i]['transitions'][q[i]][condition_on_edges[i]] for i in range(len(dfa))])
+                if q_next not in explored:
+                    queue.append(q_next)
 
-def transitive_closure(a):
-    closure = set(a)
-    while True:
-        new_relations = set((x, w) for x, y in closure for q, w in closure if q == y)
+                    # Add transition to preference automaton
+                transitions.add((q, q_next, cond))
 
-        closure_until_now = closure | new_relations
+        for q, p, cond in transitions:
+            aut.add_transition(q, p, cond)
 
-        if closure_until_now == closure:
-            break
+    def _construct_preference_graph(self, aut, semantics):
+        dfa = self.dfa
 
-        closure = closure_until_now
+        # Create partition and add nodes
+        for qid, q in aut.get_states(name=True):
+            outcomes = self.outcomes(q)
+            if semantics in PrefLTLf.MAXIMAL_SEMANTICS:
+                outcomes = self.maximal_outcomes(outcomes)
 
-    return closure
+            cls = self._vectorize(outcomes)
+            cls_id = aut.add_class(cls)
+            aut.add_state_to_class(cls_id, q)
 
+            # Create edges
+        for source_id, target_id in itertools.product(aut.pref_graph.nodes(), aut.pref_graph.nodes()):
+            source = aut.get_class_name(source_id)
+            target = aut.get_class_name(target_id)
+            if semantics(self.relation, source, target):
+                aut.add_pref_edge(source_id, target_id)
 
-# =================================================================================== #
-# TRANSLATE FORMULA TO PDFA
-# =================================================================================== #
+    def outcomes(self, q):
+        return set(i for i in range(len(q)) if q[i] in self.dfa[i]["final_states"])
 
-def translate(prefltlf_model, semantics, **kwargs):
-    """
-    Translates PrefLTLf formula to Preference Deterministic Finite Automaton (PDFA).
+    def _vectorize(self, outcomes):
+        return tuple(1 if i in outcomes else 0 for i in range(len(self.dfa)))
 
-    :param prefltlf_model: (Tuple[list, list, list]) An indexed preference model: tuple of (atoms, phi, preorder).
-    :param semantics: (function) A function with signature (preorder, source_node, target_node) -> bool.
-        The function returns True if target_node is strictly preferred to source_node, and False otherwise.
-    :return: (dict) A PDFA.
-    """
-    atoms, phi, preorder = prefltlf_model
-    dfa_list = list()
-    for f in phi:
-        dfa = ltlf2dfa(f)
-        dfa_list.append(dfa)
-        logger.info(f"DFA({f}): \n{pprint.pformat(dfa)}")
+    def maximal_outcomes(self, outcomes):
+        # No formula in (sat - f) is preferred to f
+        return {f for f in outcomes if not any((t, f) in self.relation for t in outcomes - {f})}
 
-    for i in range(len(dfa_list)):
-        if kwargs.get("debug", False):
-            dfa_to_png(dfa_list[i], os.path.join(kwargs.get("ifiles", os.getcwd()), f"dfa_{i}.png"))
+    def _ltlf2dfa(self, ltlf_formula):
+        # Use LTLf2DFA to convert LTLf formula to DFA.
+        dot = ltlf_formula.to_dfa()
+        logger.info(f"{ltlf_formula=}, dot={dot}")
 
-    product_dfa = union_product(*dfa_list)
-    logger.info(f"Union product DFA: \n{pprint.pformat(product_dfa)}")
+        # Convert dot to networkx MultiDiGraph.
+        dot_graph = nx_agraph.from_agraph(pygraphviz.AGraph(dot))
+        logger.info(f"{ltlf_formula=}, dot={dot_graph}")
 
-    pref_graph = construct_pref_graph(product_dfa, dfa_list, preorder, semantics)
-    logger.info(f"Preference graph: \n{pprint.pformat(pref_graph)}")
+        # Construct DFA dictionary using networkx MultiDiGraph.
+        dfa = dict()
+        dfa["states"] = set()
+        dfa["transitions"] = dict()
+        dfa["init_state"] = set()
+        dfa["final_states"] = set()
 
-    if kwargs.get("debug", False):
-        pdfa = copy.deepcopy(product_dfa)
-    else:
-        pdfa = product_dfa
-
-    del pdfa["final_states"]
-    pdfa["pref_graph"] = pref_graph
-    pdfa["alphabet"] = atoms
-
-    return pdfa
-
-
-def ltlf2dfa(ltlf_formula):
-    # Use LTLf2DFA to convert LTLf formula to DFA.
-    dot = ltlf_formula.to_dfa()
-
-    # Convert dot to networkx MultiDiGraph.
-    dot_graph = nx_agraph.from_agraph(pygraphviz.AGraph(dot))
-
-    # Construct DFA dictionary using networkx MultiDiGraph.
-    dfa = dict()
-    dfa["states"] = set()
-    dfa["transitions"] = dict()
-    dfa["init_state"] = set()
-    dfa["final_states"] = set()
-
-    # Add states to DFA
-    for u, d in dot_graph.nodes(data=True):
-        if u == "init":
-            continue
-        dfa["states"].add(u)
-        dfa["transitions"][u] = dict()
-        if d.get('shape', None) == 'doublecircle':
-            dfa["final_states"].add(u)
-
-    for u, v, d in dot_graph.edges(data=True):
-        if u == "init":
-            dfa["init_state"] = v
-            continue
-
-        dfa["transitions"][u][d['label']] = v
-
-    return dfa
-
-
-def union_product(*args):
-    assert len(args) > 1, "At least 2 DFAs are required for product construction."
-
-    # Initial state
-    q0 = tuple([dfa['init_state'] for dfa in args])
-
-    # Define product dfa
-    product = dict()
-    product["states"] = set()
-    product["transitions"] = dict()
-    product["init_state"] = q0
-    product["final_states"] = set()
-
-    # Add states to product dfa (only reachable states are added)
-    queue = [q0]
-    explored = set()
-    while queue:
-        # Visit next state
-        q = queue.pop()
-        explored.add(q)
-
-        # Add state to product dfa
-        product["states"].add(q)
-        product["transitions"][q] = dict()
-
-        # Add transitions to product dfa
-        for guard_label in itertools.product(*[args[i]['transitions'][q[i]].keys() for i in range(len(args))]):
-            # label = " & ".join(guard_label)
-            # label = spot.formula(label_join).simplify()
-            cond_str = ("(" + ") & (".join(guard_label) + ")").replace("!", "~")
-            cond = sympy.sympify(cond_str).simplify()
-            logger.debug(f"[{q}] \n\tGuard: {guard_label}, \n\tLabelJoin: {cond_str}, \n\tLabel: {cond}")
-
-            # If label is false, then the synchronous transition is not valid.
-            if cond == sympy.false:
+        # Add states to DFA
+        for u, d in dot_graph.nodes(data=True):
+            if u == "init":
                 continue
 
-            cond = (str(cond).replace("~", "!").
-                    replace("True", "true").
-                    replace("False", "false"))
-
-            # Otherwise, add transition
-            q_next = tuple([args[i]['transitions'][q[i]][guard_label[i]] for i in range(len(args))])
-            if q_next not in explored:
-                queue.append(q_next)
-
-            product["transitions"][q][cond] = q_next
-
-    # Index states and simplify representation
-    enum_states = {q: i for i, q in enumerate(product["states"])}
-    product["init_state"] = enum_states[product["init_state"]]
-    product["final_states"] = set(
-        i for q, i in enum_states.items()
-        if any(q[i] in args[i]["final_states"] for i in range(len(args)))
-    )
-    transitions = dict()
-    for q, d in product["transitions"].items():
-        transitions[enum_states[q]] = {label: enum_states[q_next] for label, q_next in d.items()}
-    product["transitions"] = transitions
-    product["states"] = {i: {"state": q} for q, i in enum_states.items()}
-
-    return product
-
-
-def get_mp_outcomes(outcomes, preorder):
-    return {f for f in outcomes if not any((t, f) in preorder for t in outcomes - {f})}  # no formula in (sat - f) is preferred to f
-
-
-def construct_pref_graph(product_dfa, dfa_list, preorder, semantics):
-    # Initialize preference graph
-    graph = dict()
-    graph["nodes"] = dict()
-    graph["edges"] = dict()
-
-    # Create partition and add nodes
-    # classes = dict()
-    for u in product_dfa["final_states"]:
-        state = product_dfa["states"][u]['state']
-        # outcomes = set(i if state[i] in dfa_list[i]["final_states"] else 0 for i in range(len(state)))
-        outcomes = set(i for i in range(len(state)) if state[i] in dfa_list[i]["final_states"])
-
-        mp_outcomes = outcomes
-        logger.debug(f"outcomes({state})={outcomes}")
-        if semantics in [semantics_mp_forall_exists, semantics_mp_exists_forall, semantics_mp_forall_forall]:
-            mp_outcomes = get_mp_outcomes(outcomes, preorder)
-            logger.debug(f"get_mp_outcomes({outcomes}, {preorder})={mp_outcomes}")
-
-        cls = tuple(1 if i in mp_outcomes else 0 for i in range(len(state)))
-        if str(cls) in graph["nodes"]:
-            graph["nodes"][str(cls)].add(u)
-        else:
-            graph["nodes"][str(cls)] = {u}
-            graph["edges"][str(cls)] = set()
-
-    for u in product_dfa["final_states"]:
-        state = product_dfa["states"][u]['state']
-        graph["nodes"][str((0,) * len(state))] = set(product_dfa["states"]) - set(product_dfa["final_states"])
-        graph["edges"][str((0,) * len(state))] = set()
-        break
-
-    # Construct edges using mp_semantics.
-    for source, target in itertools.product(graph["nodes"].keys(), graph["nodes"].keys()):
-        source_tuple = ast.literal_eval(source)
-        target_tuple = ast.literal_eval(target)
-        if semantics(preorder, source_tuple, target_tuple):
-            graph["edges"][source].add(target)
-
-    return graph
-
-
-# =================================================================================== #
-# SEMANTICS
-# =================================================================================== #
-
-def mp_semantics(preorder, source, target):
-    sat_source = {i for i in range(len(source)) if source[i] == 1}
-    sat_target = {i for i in range(len(target)) if target[i] == 1}
-
-    # Force empty set to be indifferent to each other. Required for preference graph to be preorder.
-    if sat_source == sat_target == set():
-        return True
-
-    if sat_target == set():
-        return False
-
-    for alpha_to in sat_target:
-        if not any((alpha_to, alpha_from) in preorder for alpha_from in sat_source):
-            return False
-
-    return True
-
-
-def semantics_forall_exists(preorder, source, target):
-    sat_source = {i for i in range(len(source)) if source[i] == 1}
-    sat_target = {i for i in range(len(target)) if target[i] == 1}
-
-    # Force empty set to be indifferent to each other. Required for preference graph to be preorder.
-    if sat_source == sat_target == set():
-        return True
-
-    if sat_target == set():
-        return False
-
-    for alpha_to in sat_target:
-        if len(sat_source) != 0 and not any((alpha_to, alpha_from) in preorder for alpha_from in sat_source):
-            # if len(sat_source) != 0 and not any((alpha_to, alpha_from) in preorder for alpha_from in sat_source - {alpha_to}):
-            return False
-
-    return True
-
-
-def semantics_exists_forall(preorder, source, target):
-    sat_source = {i for i in range(len(source)) if source[i] == 1}
-    sat_target = {i for i in range(len(target)) if target[i] == 1}
-
-    # Force empty set to be indifferent to each other. Required for preference graph to be preorder.
-    if sat_source == sat_target == set():
-        return True
-
-    if sat_target == set():
-        return False
-
-    for alpha_from in sat_source:
-        if not any((alpha_to, alpha_from) in preorder for alpha_to in sat_target):
-            return False
-
-    return True
-
-
-def semantics_forall_forall(preorder, source, target):
-    sat_source = {i for i in range(len(source)) if source[i] == 1}
-    sat_target = {i for i in range(len(target)) if target[i] == 1}
-
-    # Force empty set to be indifferent to each other. Required for preference graph to be preorder.
-    if sat_source == sat_target:
-        return True
-
-    if sat_target == set():
-        return False
-
-    for alpha_to in sat_target:
-        if not all((alpha_to, alpha_from) in preorder for alpha_from in sat_source):
-            return False
-
-    return True
-
-
-def semantics_mp_forall_exists(preorder, source, target):
-    return semantics_forall_exists(preorder, source, target)
-
-
-def semantics_mp_exists_forall(preorder, source, target):
-    return semantics_exists_forall(preorder, source, target)
-
-
-def semantics_mp_forall_forall(preorder, source, target):
-    return semantics_forall_forall(preorder, source, target)
-
-
-# =================================================================================== #
-# PRINTING AND IMAGE GENERATION
-# =================================================================================== #
-
-def prettystring_prefltlf_model(model):
-    """
-    Pretty string for indexed model.
-
-    :param model: (Tuple[list, list, list]) A tuple of (atoms, phi, preorder).
-    :return:
-    """
-    atoms, phi, preorder = model
-    pretty = ""
-    pretty += "Atoms:\n"
-    pretty += f"\t{atoms}\n"
-    pretty += "Phi:" + "\n"
-    for f in phi:
-        pretty += f"\t{f}\n"
-    pretty += "Preorder:" + "\n"
-    for f1, f2 in preorder:
-        pretty += f"\t{phi[f1]} >= {phi[f2]}\n"
-
-    return pretty
-
-
-def prettystring_pdfa(pdfa):
-    pretty = ""
-    pretty += "States:\n"
-    pretty += pprint.pformat(pdfa["states"])
-    pretty += "\n\n"
-    pretty += "Alphabet:\n"
-    pretty += pprint.pformat(pdfa["alphabet"])
-    pretty += "\n\n"
-    pretty += "Transitions:\n"
-    pretty += pprint.pformat(pdfa["transitions"])
-    pretty += "\n\n"
-    pretty += "Initial state:\n"
-    pretty += pprint.pformat(pdfa["init_state"])
-    pretty += "\n\n"
-    pretty += "Preference graph:\n"
-    pretty += pprint.pformat(pdfa["pref_graph"])
-    pretty += "\n\n"
-    return pretty
-
-
-def pdfa_to_png(pdfa, file):
-    pref_graph = pdfa["pref_graph"]
-
-    # Create graph for underlying product DFA
-    dot_dfa = pygraphviz.AGraph(directed=True)
-    for n, d in pdfa["states"].items():
-        dot_dfa.add_node(n, **{"label": d['state']})
-    dot_dfa.add_node("init", **{"label": "", "shape": "plaintext"})
-
-    for u, d in pdfa["transitions"].items():
-        for label, v in d.items():
-            dot_dfa.add_edge(u, v, **{"label": label})
-    dot_dfa.add_edge("init", pdfa["init_state"], **{"label": ""})
-
-    dot_dfa.layout(prog="dot")
-
-    # preference graph
-    dot_pref = pygraphviz.AGraph(directed=True)
-    for n in pref_graph["nodes"]:
-        dot_pref.add_node(n, **{"label": f"{n}"})
-
-    for u in pref_graph["edges"]:
-        for v in pref_graph["edges"][u]:
-            dot_pref.add_edge(u, v)
-
-    dot_pref.layout(prog="dot")
-
-    # Generate graphs
-    file = pathlib.Path(file)
-    parent = file.parent
-    stem = file.stem
-    suffix = file.suffix
-
-    dot_dfa.draw(os.path.join(parent, f"{stem}_dfa{suffix}"))
-    dot_pref.draw(os.path.join(parent, f"{stem}_pref_graph{suffix}"))
-
-
-def dfa_to_png(dfa, file):
-    # Create graph for underlying product DFA
-    dot_dfa = pygraphviz.AGraph(directed=True)
-    for n in dfa["states"]:
-        if n in dfa["final_states"]:
-            dot_dfa.add_node(n, **{"label": str(n), "shape": "doublecircle"})
-        else:
-            dot_dfa.add_node(n, **{"label": str(n)})
-    dot_dfa.add_node("init", **{"label": "", "shape": "plaintext"})
-
-    for u, d in dfa["transitions"].items():
-        for label, v in d.items():
-            dot_dfa.add_edge(u, v, **{"label": label})
-    dot_dfa.add_edge("init", dfa["init_state"], **{"label": ""})
-    dot_dfa.layout(prog="dot")
-
-    # Generate graphs
-    dot_dfa.draw(file)
-
-
-# =================================================================================== #
-# TEST FUNCTIONS
-# =================================================================================== #
-
-def main():
-    curr_dir = os.path.dirname(os.path.abspath(__file__))
-    formula = parse_prefltlf(os.path.join(curr_dir, "example", "sample2.prefltlf"))
-    model = build_prefltlf_model(formula)
-    model = index_model(model)
-    save_prefltlf_model(model, os.path.join(curr_dir, "example", "sample2.model"))
-    print(model)
-    model_ = load_prefltlf_model(os.path.join(curr_dir, "example", "sample2.model"))
-    prettystring_prefltlf_model(model_)
-    pdfa = translate(model_)
-    pdfa_to_png(pdfa, os.path.join(curr_dir, "example", "sample2.png"))
-
-
-if __name__ == '__main__':
-    main()
+            u = int(float(u))
+            dfa["states"].add(u)
+            dfa["transitions"][u] = dict()
+            if d.get('shape', None) == 'doublecircle':
+                dfa["final_states"].add(u)
+
+        for u, v, d in dot_graph.edges(data=True):
+            if u == "init":
+                dfa["init_state"] = int(v)
+                continue
+
+            u = int(float(u))
+            v = int(float(v))
+
+            dfa["transitions"][u][d['label']] = v
+
+        logger.info(f"ltlf_formula={ltlf_formula}, dfa={dfa}")
+        return dfa
+
+
+class PrefAutomaton:
+    def __init__(self):
+        # Automaton structure
+        self.states = dict()
+        self.atoms = set()
+        self.alphabet = set()
+        self.transitions = dict()
+        self.init_state = None
+        self.pref_graph = nx.MultiDiGraph()
+
+        # Helper attributes
+        self._num_states = 0
+        self._num_nodes = 0
+        self._inv_state = dict()
+        self._inv_nodes = dict()
+
+    def __str__(self):
+        return pprint.pformat(self.serialize())
+
+    def serialize(self):
+        obj_dict = {
+            "states": self.states,
+            "atoms": list(self.atoms),
+            "alphabet": list(self.alphabet) if self.alphabet is not None else None,
+            "transitions": self.transitions,
+            "init_state": self.init_state,
+            "pref_graph": {
+                "nodes": {u: {k: list(v) if isinstance(v, set) else v for k, v in data.items()}
+                          for u, data in self.pref_graph.nodes(data=True)},
+                "edges": {u: v for u, v in self.pref_graph.edges()}
+            }
+        }
+        return obj_dict
+
+    @classmethod
+    def deserialize(cls, obj_dict):
+        aut = cls()
+        aut.states = obj_dict["states"]
+        aut.atoms = set(obj_dict["atoms"])
+        aut.alphabet = set(obj_dict["alphabet"])
+        aut.transitions = obj_dict["transitions"]
+        aut.init_state = obj_dict["init_state"]
+
+        for node, data in obj_dict["pref_graph"]["nodes"]:
+            aut.pref_graph.add_node(node, **data)
+
+        for u, v in obj_dict["pref_graph"]["edges"]:
+            aut.pref_graph.add_edge(u, v)
+
+        aut._num_states = len(aut.states)
+        aut._num_nodes = len(aut.pref_graph.number_of_nodes())
+        aut._inv_state = {v: k for k, v in aut.states}
+        aut._inv_nodes = {data["name"]: k for k, data in aut.pref_graph.nodes(data=True)}
+
+        return aut
+
+    def add_state(self, name):
+        uid = self._inv_state.get(name, None)
+        if uid is None:
+            uid = self._num_states
+            self.states[uid] = name
+            self._inv_state[name] = uid
+            self.transitions[uid] = dict()
+            self._num_states += 1
+        return uid
+
+    def get_states(self, name=False):
+        if name:
+            return list(self.states.items())
+        return list(self.states.keys())
+
+    def add_transition(self, u, v, cond):
+        uid = self._inv_state[u]
+        vid = self._inv_state[v]
+        self.transitions[uid].update({cond: vid})
+
+    def get_state_id(self, name):
+        return self._inv_state[name]
+
+    def add_class(self, cls_name):
+        cls_id = self._inv_nodes.get(cls_name, None)
+        if cls_id is None:
+            cls_id = self._num_nodes
+            self.pref_graph.add_node(cls_id, name=cls_name, partition=set())
+            self._inv_nodes[cls_name] = cls_id
+            self._num_nodes += 1
+        return cls_id
+
+    def add_state_to_class(self, cls_id, q):
+        self.pref_graph.nodes[cls_id]["partition"].add(q)
+
+    def get_class_name(self, cls_id):
+        return self.pref_graph.nodes[cls_id]["name"]
+
+    def add_pref_edge(self, source_id, target_id):
+        assert self.pref_graph.has_node(source_id), f"Cannot add preference edge. {source_id=} not in preference graph. "
+        assert self.pref_graph.has_node(target_id), f"Cannot add preference edge. {target_id=} not in preference graph. "
+        self.pref_graph.add_edge(source_id, target_id)
