@@ -347,6 +347,15 @@ class PrefLTLf:
         return dfa
 
     def _construct_spec_ir(self):
+        """
+        Construct intermediate representation of PrefLTLf specification.
+
+        Steps:
+            1. Extract LTLf formulas from the specification.
+            2. Eliminate duplicate LTLf formulas (based on language equivalence).
+
+        :return: (phi, spec_ir)
+        """
         # Initialize outputs
         phi = dict()
 
@@ -363,17 +372,27 @@ class PrefLTLf:
         for i in range(n_phi):
             phi[i] = PARSER(stmts[i].strip())
 
+        # Eliminate formulas with equivalent languages
+        equiv = self._find_equivalent_ltlf(phi)
+        compact_phi, replacement = self._process_equiv_ltlf(phi, equiv)
+
         # Collect atomic preferences
-        spec_ir = list()
+        spec_ir = set()
         for atomic_pref in stmts[n_phi:]:
             pref_type, l_index, r_index = atomic_pref.split(",")
             l_index = int(l_index.strip())
             r_index = int(r_index.strip())
             assert l_index in phi, f"Index of LTLf formula out of bounds. |Phi|={len(phi)}, l_index={l_index}."
             assert r_index in phi, f"Index of LTLf formula out of bounds. |Phi|={len(phi)}, r_index={l_index}."
-            spec_ir.append((pref_type, l_index, r_index))
 
-        return phi, spec_ir
+            if l_index in replacement:
+                l_index = replacement[l_index]
+            if r_index in replacement:
+                r_index = replacement[r_index]
+
+            spec_ir.add((pref_type, l_index, r_index))
+
+        return compact_phi, list(spec_ir)
 
     def _is_lang_complete(self, phi):
         formula = " | ".join([f"({varphi})" for varphi in phi.values()])
@@ -398,13 +417,11 @@ class PrefLTLf:
         # Construct P, P', I, J sets
         set_w = set()
         set_p = set()
-        set_q = set()
         set_i = set()
         set_j = set()
         for pref_type, varphi1, varphi2 in pref_stmts:
             if pref_type == ">":
                 set_p.add((varphi1, varphi2))
-                set_q.add((varphi2, varphi1))
 
             elif pref_type == ">=":
                 set_w.add((varphi1, varphi2))
@@ -417,15 +434,15 @@ class PrefLTLf:
                 set_j.add((varphi1, varphi2))
                 set_j.add((varphi2, varphi1))
 
-        logger.debug(f"Input clauses from raw-spec:\n{set_w=} \n{set_p=} \n{set_q=} \n{set_i=} \n{set_j=}")
+        logger.debug(f"Input clauses from raw-spec:\n{set_w=} \n{set_p=} \n{set_i=} \n{set_j=}")
 
         # Resolve W into P, I, J
         for varphi1, varphi2 in set_w:
-            if (varphi1, varphi2) in set_q:
-                raise ValueError(f"Inconsistent specification: {(varphi2, varphi1)} in P and {(varphi1, varphi2)} in W.")
+            if (varphi1, varphi2) in set_j:
+                raise ValueError(f"Inconsistent specification: {varphi1} >= {varphi2} and {varphi1} <> {varphi2}.")
 
-            elif (varphi1, varphi2) in set_j:
-                raise ValueError(f"Inconsistent specification: {(varphi2, varphi1)} in P and {(varphi1, varphi2)} in W.")
+            elif (varphi2, varphi1) in set_p:
+                raise ValueError(f"Inconsistent specification: {varphi1} >= {varphi2} and {varphi2} > {varphi1}.")
 
             elif (varphi1, varphi2) in set_p | set_i:
                 pass
@@ -435,7 +452,6 @@ class PrefLTLf:
 
             else:
                 set_p.add((varphi1, varphi2))
-                set_q.add((varphi2, varphi1))
 
         logger.debug(f"Resolving W into PIJ model:\n{set_p=} \n{set_i=} \n{set_j=}")
 
@@ -445,21 +461,32 @@ class PrefLTLf:
         logger.debug(f"Transitive Closure on P, I:\n{set_p=} \n{set_i=} \n{set_j=}")
 
         # Consistency check
+        if any((varphi1, varphi1) in set_p for varphi1 in phi):
+            raise ValueError(f"Inconsistent specification: Reflexivity violated. "
+                             f"{[(varphi1, varphi1) in set_p for varphi1 in phi]} in P.")
+
+        if any((varphi2, varphi1) in set_p for varphi1, varphi2 in set_p):
+            raise ValueError(f"Inconsistent specification: Strictness violated. "
+                             f"{[[(p1, p2), (p2, p1)] for p1, p2 in set_p if (p2, p1) in set_p]} in P.")
+
         if set.intersection(set_p, set_i):
             raise ValueError(f"Inconsistent specification: {set.intersection(set_p, set_i)} common in P and I.")
+
         if set.intersection(set_p, set_j):
             raise ValueError(f"Inconsistent specification: {set.intersection(set_p, set_j)} common in P and J.")
+
         if set.intersection(set_i, set_j):
             raise ValueError(f"Inconsistent specification: {set.intersection(set_i, set_j)} common in I and J.")
 
         logger.debug(f"Model:\n{phi=} \nmodel={set.union(set_p, set_i)}")
 
-        # Merge any specifications with same language.
-        equiv = self._find_equivalent_ltlf(phi)
-        phi, model = self._process_equiv_ltlf(phi, set.union(set_p, set_i), equiv)
-        logger.debug(f"Merge language equivalent formulas:\n{phi=} \n{model=}")
+        # # Merge any specifications with same language.
+        # equiv = self._find_equivalent_ltlf(phi)
+        # phi, model = self._process_equiv_ltlf(phi, set.union(set_p, set_i), equiv)
+        # logger.debug(f"Merge language equivalent formulas:\n{phi=} \n{model=}")
 
         # Apply reflexive closure
+        model = set.union(set_p, set_i)
         model.update({(i, i) for i in phi.keys()})
         logger.debug(f"Reflexive closure:\n{model=}")
 
@@ -505,7 +532,7 @@ class PrefLTLf:
 
         return equiv_formulas
 
-    def _process_equiv_ltlf(self, phi, model, equiv):
+    def _process_equiv_ltlf2(self, phi, model, equiv):
         """
         Approach: Construct an undirected graph with equivalent LTLf formulas as nodes.
             Two nodes have an edge between them <=> they are equivalent.
@@ -551,23 +578,71 @@ class PrefLTLf:
         print(n_phi, n_spec_ir)
         return n_phi, n_spec_ir
 
+    def _process_equiv_ltlf(self, phi, equiv):
+        """
+        Approach: Construct an undirected graph with equivalent LTLf formulas as nodes.
+            Two nodes have an edge between them <=> they are equivalent.
+            SCC's in this graph partitions the LTLf formulas.
+            Pick one formula to represent each SCC. Replace all others.
+
+        :param phi: Dictionary mapping integer id to LTLf formulas
+        :param equiv: Set of tuples containing equivalent LTLf formulas.
+        :return: Tuple containing new phi and replacement dictionary.
+        """
+        # Construct equivalence graph
+        equiv_graph = nx.DiGraph()
+
+        for u, v in equiv:
+            equiv_graph.add_edge(u, v)
+            equiv_graph.add_edge(v, u)
+
+        # equiv_graph.add_edges_from(equiv)
+        scc = list(nx.strongly_connected_components(equiv_graph))
+
+        # Construct new phi
+        idx_to_remove = set()
+        replacement = dict()
+        for component in scc:
+            keep_f = min(component)
+            for f in component - {keep_f}:
+                replacement[f] = keep_f
+            idx_to_remove.update(component - {min(component)})
+
+        n_phi = {k: v for k, v in phi.items() if k not in idx_to_remove}
+
+        return n_phi, replacement
+
     def _pre_to_partial_order(self, phi, preorder):
+        # Initialize output
         partial_order = set()
+
+        # Construct preorder graph (might contain cycles)
         order_graph = nx.DiGraph()
         order_graph.add_edges_from(preorder)
+
+        # Find strongly connected components
         scc = nx.strongly_connected_components(order_graph)
+
+        # Replace indifferent formulas with their disjunction
         max_index = max(phi.keys())
         replace = dict()
+
         for component in scc:
             if len(component) >= 2:
+                # Construct disjunction of indifferent formulas in the `component`
                 formulas = (f"({phi[i]})" for i in component)
                 replacement_ltlf = PARSER(" | ".join(formulas))
+
+                # Add new formula to phi
                 phi[max_index + 1] = replacement_ltlf
+
+                # Remove indifferent formulas from phi
                 max_index = max_index + 1
                 for i in component:
                     phi.pop(i)
                     replace[i] = max_index
 
+        # Construct partial order from preorder by replacing indifferent formulas
         for i, j in preorder:
             if i in replace:
                 i = replace[i]
@@ -575,7 +650,7 @@ class PrefLTLf:
                 j = replace[j]
             partial_order.add((i, j))
 
-        print(phi, partial_order)
+        # Return
         return phi, partial_order
 
 
@@ -687,8 +762,8 @@ if __name__ == '__main__':
     
     F a
     G b
-    true U a
     !(F(a) | G(b))
+    true U a
     
     # SPec
     >, 0, 1
@@ -698,4 +773,3 @@ if __name__ == '__main__':
 
     formula = PrefLTLf(spec)
 
-# FIXME. Design provably correct algorithm to construct model! The above example breaks my code!
