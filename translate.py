@@ -80,10 +80,6 @@ class PrefLTLf:
         logger.info(f"relation={self.relation}")
 
     def parse(self):
-        atoms = dict()  # Set of atomic propositions
-        phi = dict()  # Set of LTLf formulas used as a condition
-        models = dict()  # Map each condition to a model: {phi_index: pref_model}
-
         # Parse header. Ensure that the spec is well-formed and a PrefLTLf formula.
         header = self._parse_header()
         logger.debug(f"{header=}")
@@ -106,6 +102,10 @@ class PrefLTLf:
             atoms.update(set(varphi.find_labels()))
 
         # Return
+        self.phi = phi
+        self.relation = model
+        self.atoms = atoms
+
         return phi, model, atoms
 
     def translate(self, semantics="mp_forall_exists"):
@@ -115,7 +115,7 @@ class PrefLTLf:
         aut.alphabet = self.alphabet
 
         # Translate LTLf formulas in self.phi to DFAs
-        self.dfa = [self._ltlf2dfa(ltlf) for ltlf in self.phi]
+        self.dfa = [self._ltlf2dfa(ltlf) for _, ltlf in self.phi.items()]
         assert len(self.dfa) >= 2, f"PrefLTLf spec must have at least two LTLf formulas."
         for dfa in self.dfa:
             logger.info(f"dfa={dfa}")
