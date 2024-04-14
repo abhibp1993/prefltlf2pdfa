@@ -1,9 +1,0 @@
-prefltlf 4
-(!d & !o) U (t & XF(d | o))
-!t U ((o & XF (d | t)) | (d & XF (o | t)))
-(!d & !o) U (t & G (!d & !o))
-G(!d & !o & !t) | (F o & G (!d & !t)) | (F d & G (!o & !t))
->, 0, 1
->, 0, 2
->, 1, 3
->, 2, 3
