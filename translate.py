@@ -15,8 +15,8 @@ PARSER = LTLfParser()
 class PrefLTLf:
     MAXIMAL_SEMANTICS = [semantics_mp_forall_exists, semantics_mp_exists_forall, semantics_mp_forall_forall]
 
-    def __init__(self, f_str, alphabet=None, **kwargs):
-        self.f_str = f_str
+    def __init__(self, spec, alphabet=None, **kwargs):
+        self.raw_spec = spec
         self.atoms = set()  # Set of atomic propositions appearing in PrefLTLf specification
         self.alphabet = list(alphabet) if alphabet is not None else None
         self.phi = list()  # List (indexed set) of LTLf formulas appearing in PrefLTLf specification
@@ -34,7 +34,7 @@ class PrefLTLf:
 
     def serialize(self):
         jsonable_dict = {
-            "f_str": self.f_str,
+            "f_str": self.raw_spec,
             "atoms": list(self.atoms),
             "alphabet": list(self.alphabet) if self.alphabet is not None else None,
             "phi": [str(f) for f in self.phi],
@@ -44,7 +44,7 @@ class PrefLTLf:
 
     @classmethod
     def deserialize(cls, obj_dict):
-        formula = cls(f_str=obj_dict["f_str"], skip_parse=True)
+        formula = cls(spec=obj_dict["f_str"], skip_parse=True)
         formula.atoms = set(obj_dict["atoms"])
         formula.alphabet = set(obj_dict["alphabet"]) if obj_dict["alphabet"] is not None else None
         formula.phi = obj_dict["phi"]
@@ -56,9 +56,9 @@ class PrefLTLf:
         with open(fpath, 'r') as f:
             return cls(f.read(), alphabet=alphabet)
 
-    def parse(self):
+    def parse2(self):
         # Separate formula string into lines
-        raw_spec = self.f_str.split("\n")
+        raw_spec = self.raw_spec.split("\n")
         if len(raw_spec) == 0:
             raise EOFError("Empty PrefLTLf file.")
 
@@ -78,6 +78,35 @@ class PrefLTLf:
         # Build preorder
         self.relation = self._build_preorder(relation_spec)
         logger.info(f"relation={self.relation}")
+
+    def parse(self):
+        atoms = dict()  # Set of atomic propositions
+        phi = dict()  # Set of LTLf formulas used as a condition
+        models = dict()  # Map each condition to a model: {phi_index: pref_model}
+
+        # Parse header. Ensure that the spec is well-formed and a PrefLTLf formula.
+        header = self._parse_header()
+        logger.debug(f"{header=}")
+
+        # Construct intermediate representation of standard spec
+        phi, spec_ir = self._construct_spec_ir()
+        if not self._is_lang_complete(phi):
+            raise ValueError(f"The set of conditions phi = {set(phi.values())} is not complete")
+        print(f"{phi=}")
+        print(f"{spec_ir=}")
+
+        # Else, we have spec in standard format. Build model. (if user has specified ltlf formulas, add them to model)
+        phi, model = self._build_partial_order(phi, spec_ir)
+        print(f"{phi=}")
+        print(f"{model=}")
+
+        # Construct set of atomic propositions
+        atoms = set()
+        for varphi in phi.values():
+            atoms.update(set(varphi.find_labels()))
+
+        # Return
+        return phi, model, atoms
 
     def translate(self, semantics="mp_forall_exists"):
         # Define preference automaton and set basic attributes
@@ -100,17 +129,21 @@ class PrefLTLf:
         # Return preference automaton
         return aut
 
-    def _parse_header(self, raw_spec):
-        header = raw_spec[0].split(" ")
+    def _parse_header(self):
+        stmts = (line.strip() for line in self.raw_spec.split("\n"))
+        stmts = [line for line in stmts if line and not line.startswith("#")]
+        header = stmts[0]
+        header = header.split(" ")
 
         if len(header) != 2:
-            raise TypeError(f"PrefLTLf specification must have header of format: `prefltlf <int>`. Received `{header}`.")
+            raise ValueError(f"Ill-formatted specification file. Header should be `prefltlf <num_formula>`, "
+                             f"where specifying <num_formula> is optional.")
 
-        formula_type = header[0].strip().lower()
-        if formula_type != "prefltlf":
-            raise ValueError(f"Not a PrefLTLf formula. Likely a '{formula_type}' formula.")
+        if header[0].strip().lower() != "prefltlf":
+            raise ValueError(f"Not a PrefLTLf formula. Likely a '{header[0].strip().lower()}' formula.")
 
-        return int(header[1].strip())
+        header[1] = int(header[1].strip())
+        return header
 
     def _parse_ltlf(self, raw_spec):
         atoms = set()
@@ -313,6 +346,238 @@ class PrefLTLf:
         logger.info(f"ltlf_formula={ltlf_formula}, dfa={dfa}")
         return dfa
 
+    def _construct_spec_ir(self):
+        # Initialize outputs
+        phi = dict()
+
+        # Extract non-header lines from spec
+        stmts = (line.strip() for line in self.raw_spec.split("\n"))
+        stmts = [line for line in stmts if line and not line.startswith("#")]
+        stmts = stmts[1:]
+
+        # Extract header
+        header = self._parse_header()
+        n_phi = header[1]
+
+        # Construct phi: the set of conditions, i.e., LTLf formulas.
+        for i in range(n_phi):
+            phi[i] = PARSER(stmts[i].strip())
+
+        # Collect atomic preferences
+        spec_ir = list()
+        for atomic_pref in stmts[n_phi:]:
+            pref_type, l_index, r_index = atomic_pref.split(",")
+            l_index = int(l_index.strip())
+            r_index = int(r_index.strip())
+            assert l_index in phi, f"Index of LTLf formula out of bounds. |Phi|={len(phi)}, l_index={l_index}."
+            assert r_index in phi, f"Index of LTLf formula out of bounds. |Phi|={len(phi)}, r_index={l_index}."
+            spec_ir.append((pref_type, l_index, r_index))
+
+        return phi, spec_ir
+
+    def _is_lang_complete(self, phi):
+        formula = " | ".join([f"({varphi})" for varphi in phi.values()])
+        equiv_formula = PARSER(formula)
+        dfa = self._ltlf2dfa(equiv_formula)
+
+        # Check for universally true DFA
+        if len(dfa["states"]) == 1 and len(dfa["final_states"]) == 1:
+            return True
+        return False
+
+    def _build_partial_order(self, phi, pref_stmts):
+        """
+        Constructs a partial order on phi using preference statements.
+
+        :param phi: List of LTLf formulas
+        :param pref_stmts: List of preference statements of form (op, l_index, r_index).
+        :return:
+        """
+        logger.debug("Building partial order.")
+
+        # Construct P, P', I, J sets
+        set_w = set()
+        set_p = set()
+        set_q = set()
+        set_i = set()
+        set_j = set()
+        for pref_type, varphi1, varphi2 in pref_stmts:
+            if pref_type == ">":
+                set_p.add((varphi1, varphi2))
+                set_q.add((varphi2, varphi1))
+
+            elif pref_type == ">=":
+                set_w.add((varphi1, varphi2))
+
+            elif pref_type == "~":
+                set_i.add((varphi1, varphi2))
+                set_i.add((varphi2, varphi1))
+
+            elif pref_type == "<>":
+                set_j.add((varphi1, varphi2))
+                set_j.add((varphi2, varphi1))
+
+        logger.debug(f"Input clauses from raw-spec:\n{set_w=} \n{set_p=} \n{set_q=} \n{set_i=} \n{set_j=}")
+
+        # Resolve W into P, I, J
+        for varphi1, varphi2 in set_w:
+            if (varphi1, varphi2) in set_q:
+                raise ValueError(f"Inconsistent specification: {(varphi2, varphi1)} in P and {(varphi1, varphi2)} in W.")
+
+            elif (varphi1, varphi2) in set_j:
+                raise ValueError(f"Inconsistent specification: {(varphi2, varphi1)} in P and {(varphi1, varphi2)} in W.")
+
+            elif (varphi1, varphi2) in set_p | set_i:
+                pass
+
+            elif (varphi2, varphi1) in set_w:
+                set_i.add((varphi1, varphi2))
+
+            else:
+                set_p.add((varphi1, varphi2))
+                set_q.add((varphi2, varphi1))
+
+        logger.debug(f"Resolving W into PIJ model:\n{set_p=} \n{set_i=} \n{set_j=}")
+
+        # Transitive closure
+        set_p = self._transitive_closure(set_p)
+        set_i = self._transitive_closure(set_i)
+        logger.debug(f"Transitive Closure on P, I:\n{set_p=} \n{set_i=} \n{set_j=}")
+
+        # Consistency check
+        if set.intersection(set_p, set_i):
+            raise ValueError(f"Inconsistent specification: {set.intersection(set_p, set_i)} common in P and I.")
+        if set.intersection(set_p, set_j):
+            raise ValueError(f"Inconsistent specification: {set.intersection(set_p, set_j)} common in P and J.")
+        if set.intersection(set_i, set_j):
+            raise ValueError(f"Inconsistent specification: {set.intersection(set_i, set_j)} common in I and J.")
+
+        logger.debug(f"Model:\n{phi=} \nmodel={set.union(set_p, set_i)}")
+
+        # Merge any specifications with same language.
+        equiv = self._find_equivalent_ltlf(phi)
+        phi, model = self._process_equiv_ltlf(phi, set.union(set_p, set_i), equiv)
+        logger.debug(f"Merge language equivalent formulas:\n{phi=} \n{model=}")
+
+        # Apply reflexive closure
+        model.update({(i, i) for i in phi.keys()})
+        logger.debug(f"Reflexive closure:\n{model=}")
+
+        # Apply transitive closure
+        # model = util.transitive_closure(model)
+        # print(phi)
+        # print(model)
+
+        # If spec is a preorder, but not a partial order, then construct a partial order. [add option to skip this]
+        phi, model = self._pre_to_partial_order(phi, model)
+        logger.debug(f"Preorder to Partial Order:\n{phi=}\n{model=}")
+
+        return phi, model
+
+    def _find_equivalent_ltlf(self, phi):
+        """
+        Returns a set of tuples containing equivalent LTLf formulas.
+
+        :param phi: List of LTLf formulas
+        :return: A set of tuples containing equivalent LTLf formulas.
+
+        .. note:: O(n^2) algorithm.
+        """
+        # Initialize output
+        equiv_formulas = set()
+
+        #  Compare every formula with every other formula to identify equivalent LTLf formulas.
+        indices = list(phi.keys())
+        for i in range(len(indices)):
+            for j in range(i + 1, len(indices)):
+                # Approach: Construct equivalence LTLf formula.
+                #   Check if DFA is universally true, i.e., has a single state which is accepting.
+
+                # Equivalence formula
+                equiv_formula = PARSER(f"{phi[indices[i]]} <-> {phi[indices[j]]}")
+                dfa = self._ltlf2dfa(equiv_formula)
+
+                # Check for universally true DFA
+                if len(dfa["states"]) == 1 and len(dfa["final_states"]) == 1:
+                    equiv_formulas.add((indices[i], indices[j]))
+
+                print(equiv_formula, dfa)
+
+        return equiv_formulas
+
+    def _process_equiv_ltlf(self, phi, model, equiv):
+        """
+        Approach: Construct an undirected graph with equivalent LTLf formulas as nodes.
+            Two nodes have an edge between them <=> they are equivalent.
+            SCC's in this graph partitions the LTLf formulas.
+            Pick one formula to represent each SCC. Replace all others.
+
+        :param phi:
+        :param model:
+        :param equiv:
+        :return:
+        """
+        # Initialize output
+        n_phi = list()
+        n_spec_ir = set()
+
+        # Construct equivalence graph
+        equiv_graph = nx.DiGraph()
+
+        for u, v in equiv:
+            equiv_graph.add_edge(u, v)
+            equiv_graph.add_edge(v, u)
+
+        # equiv_graph.add_edges_from(equiv)
+        scc = list(nx.strongly_connected_components(equiv_graph))
+        print(scc)
+
+        # Replace any formula index in atomic spec with minimum value from the strongly connected component.
+        for l_idx, r_idx in model:
+            for component in scc:
+                if l_idx in component:
+                    l_idx = min(component)
+                if r_idx in component:
+                    r_idx = min(component)
+            n_spec_ir.add((l_idx, r_idx))
+
+        # Construct new phi
+        idx_to_remove = set()
+        for component in scc:
+            idx_to_remove.update(component - {min(component)})
+
+        n_phi = {k: v for k, v in phi.items() if k not in idx_to_remove}
+
+        print(n_phi, n_spec_ir)
+        return n_phi, n_spec_ir
+
+    def _pre_to_partial_order(self, phi, preorder):
+        partial_order = set()
+        order_graph = nx.DiGraph()
+        order_graph.add_edges_from(preorder)
+        scc = nx.strongly_connected_components(order_graph)
+        max_index = max(phi.keys())
+        replace = dict()
+        for component in scc:
+            if len(component) >= 2:
+                formulas = (f"({phi[i]})" for i in component)
+                replacement_ltlf = PARSER(" | ".join(formulas))
+                phi[max_index + 1] = replacement_ltlf
+                max_index = max_index + 1
+                for i in component:
+                    phi.pop(i)
+                    replace[i] = max_index
+
+        for i, j in preorder:
+            if i in replace:
+                i = replace[i]
+            if j in replace:
+                j = replace[j]
+            partial_order.add((i, j))
+
+        print(phi, partial_order)
+        return phi, partial_order
+
 
 class PrefAutomaton:
     def __init__(self):
@@ -412,3 +677,25 @@ class PrefAutomaton:
         assert self.pref_graph.has_node(source_id), f"Cannot add preference edge. {source_id=} not in preference graph. "
         assert self.pref_graph.has_node(target_id), f"Cannot add preference edge. {target_id=} not in preference graph. "
         self.pref_graph.add_edge(source_id, target_id)
+
+
+if __name__ == '__main__':
+    spec = ("""
+    # test
+    prefltlf 4
+    
+    
+    F a
+    G b
+    true U a
+    !(F(a) | G(b))
+    
+    # SPec
+    >, 0, 1
+    >, 0, 2
+    >=, 1, 2
+    """)
+
+    formula = PrefLTLf(spec)
+
+# FIXME. Design provably correct algorithm to construct model! The above example breaks my code!
