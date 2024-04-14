@@ -1,4 +1,13 @@
+"""
+TODO. Download files
+    1. Parsed Input
+    2. Parsed Options
+    3.
+TODO. Logging
+"""
+
 import base64
+import json
 import os
 import pathlib
 import sys
@@ -24,6 +33,8 @@ from dash import html
 from dash import dcc
 # import dash_cytoscape as cyto
 from loguru import logger
+
+
 
 # logger.add(os.path.join("assets", "out", "app.log"), rotation="20 MB")
 logger.info("Starting application...")
@@ -191,6 +202,7 @@ translate_and_download_button = dbc.Container(
             className="mb-3",
             # style={},
         ),
+        dcc.Download(id="download-json"),
     ]
 )
 
@@ -483,6 +495,7 @@ def translate_to_pdfa(input_dict):
         dash.dependencies.Output("alert", "is_open"),
         dash.dependencies.Output("alert", "color"),
         dash.dependencies.Output("alert", "children"),
+        dash.dependencies.Output("download-json", "data"),
     ],
     [
         dash.dependencies.Input("btn_translate", "n_clicks"),
@@ -507,7 +520,7 @@ def cb_btn_translate(
     if (btn_translate_clicks == 0 or btn_translate_clicks is None) and \
             (btn_translate_download_clicks == 0 or btn_translate_download_clicks is None):
         logger.info("init button click")
-        return 'https://via.placeholder.com/200', 'https://via.placeholder.com/200', False, "", ""
+        return 'https://via.placeholder.com/200', 'https://via.placeholder.com/200', False, "", "", ""
 
     # Identify which button was clicked
     changed_id = [p['prop_id'].split(".") for p in dash.callback_context.triggered][0][0]
@@ -527,11 +540,25 @@ def cb_btn_translate(
         semi_aut, pref_graph = render(pdfa, phi=phi.phi, **input_dict["options"])
         semi_aut = f"data:image/png;base64,{semi_aut.decode()}"
         pref_graph = f"data:image/png;base64,{pref_graph.decode()}"
-        # print(semi_aut, pref_graph)
-        return semi_aut, pref_graph, False, "", ""
+
+        if changed_id == "btn_translate":
+            return semi_aut, pref_graph, False, "", "", ""
+
+        elif changed_id == "btn_translate_download":
+            # Set up output as json
+            output_dict = {
+                "input": input_dict,
+                "formula": phi.serialize(),
+                "pdfa": pdfa.serialize()
+            }
+            # return semi_aut, pref_graph, False, "", "", output_dict
+            return semi_aut, pref_graph, False, "", "", dict(content=f"{json.dumps(output_dict, indent=2)}", filename="hello.json")
+
+        else:
+            raise ValueError("Invalid button clicked.")
 
     except Exception as err:
-        return "", "", True, "danger", f"{repr(err)}"
+        return "", "", True, "danger", f"{repr(err)}", ""
 
 
 # @app.callback(

@@ -116,7 +116,7 @@ class PrefLTLf:
             "f_str": self.f_str,
             "atoms": list(self.atoms),
             "alphabet": list(self.alphabet) if self.alphabet is not None else None,
-            "phi": self.phi,
+            "phi": [str(f) for f in self.phi],
             "relation": list(self.relation)
         }
         return jsonable_dict
@@ -420,7 +420,8 @@ class PrefAutomaton:
             "transitions": self.transitions,
             "init_state": self.init_state,
             "pref_graph": {
-                "nodes": {u: data for u, data in self.pref_graph.nodes(data=True)},
+                "nodes": {u: {k: list(v) if isinstance(v, set) else v for k, v in data.items()}
+                          for u, data in self.pref_graph.nodes(data=True)},
                 "edges": {u: v for u, v in self.pref_graph.edges()}
             }
         }
