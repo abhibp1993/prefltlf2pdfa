@@ -110,7 +110,7 @@ class PrefLTLf:
 
         return phi, model, atoms
 
-    def translate(self, semantics="mp_forall_exists"):
+    def translate(self, semantics):
         # Define preference automaton and set basic attributes
         aut = PrefAutomaton()
         aut.atoms = self.atoms
