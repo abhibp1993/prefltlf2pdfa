@@ -36,10 +36,11 @@ class PrefLTLf:
         jsonable_dict = {
             "f_str": self.raw_spec,
             "atoms": list(self.atoms),
-            "alphabet": list(self.alphabet) if self.alphabet is not None else None,
+            "alphabet": [list(symbol) for symbol in self.alphabet] if self.alphabet is not None else None,
             "phi": [str(f) for f in self.phi],
             "relation": list(self.relation)
         }
+        logger.debug(pprint.pformat(jsonable_dict))
         return jsonable_dict
 
     @classmethod
@@ -677,7 +678,7 @@ class PrefAutomaton:
         obj_dict = {
             "states": self.states,
             "atoms": list(self.atoms),
-            "alphabet": list(self.alphabet) if self.alphabet is not None else None,
+            "alphabet": [list(symbol) for symbol in self.alphabet] if self.alphabet is not None else None,
             "transitions": self.transitions,
             "init_state": self.init_state,
             "pref_graph": {

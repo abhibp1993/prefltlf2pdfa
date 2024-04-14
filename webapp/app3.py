@@ -415,7 +415,9 @@ def generate_input_dict(text_spec, text_alphabet, chklist_options, ddl_semantics
 def translate_to_pdfa(input_dict):
     # Parse alphabet
     if input_dict["alphabet"]:
-        alphabet = [ast.literal_eval(s.strip()) for s in input_dict["alphabet"].split("\n")]
+        stmts = (line.strip() for line in input_dict["alphabet"].split("\n"))
+        stmts = [line for line in stmts if line and not line.startswith("#")]
+        alphabet = [ast.literal_eval(s) for s in stmts]
     else:
         alphabet = set()
 
@@ -602,7 +604,14 @@ def cb_btn_translate(
             return semi_aut, pref_graph, False, "", "", ""
 
         elif changed_id == "btn_translate_download":
-            return semi_aut, pref_graph, False, "", "", dict(content=f"{json.dumps(output_dict, indent=2)}", filename="hello.json")
+            return (
+                semi_aut,
+                pref_graph,
+                False,
+                "",
+                "",
+                dict(content=f"{json.dumps(output_dict, indent=2)}", filename="hello.json")
+            )
 
         else:
             raise ValueError("Invalid button clicked.")
