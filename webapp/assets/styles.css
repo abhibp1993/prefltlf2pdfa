@@ -1,0 +1,88 @@
+/* styles.css */
+
+/* Center the app content */
+.center-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+}
+
+/* Style the title */
+h1 {
+    color: black;
+}
+
+/* Style button */
+button {
+    padding: 10px;
+    margin: 5px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 14px;
+}
+
+/* Style text areas */
+textarea {
+    padding: 20px;
+    margin: 5px;
+    border: 2px solid #ccc;
+    border-radius: 5px;
+    font-size: 16px;
+    width: 300px; /* Adjust the width as needed */
+}
+
+/* Style text area labels */
+label {
+    font-size: 16px;
+    font-weight: bold;
+}
+
+/* Style the radio buttons container */
+.box {
+    border: 1px solid #ccc;
+    border-radius: 10px;
+    padding: 10px;
+    background-color: #f4f4f4;
+    margin: 10px 0;
+}
+
+/* Style the title within the radio buttons container */
+.box-title {
+    font-weight: bold;
+    font-size: 20px;
+}
+
+
+/* Style individual image boxes */
+.image-container {
+    flex: 1; /* Each box takes equal space */
+    margin: 10px;
+    border: 1px solid #ccc;
+    border-radius: 10px;
+    padding: 10px;
+    background-color: #f4f4f4;
+    text-align: center;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+.image-boxes {
+    display: flex; /* Display image boxes side by side */
+}
+
+
+.alert-top {
+    position: fixed;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000; /* Ensure the alert is on top of other content */
+    /*width: 300px;*/
+    /*background-color: yellow; !* Set the background color to yellow *!*/
+    /*border: 2px solid orange; !* Add a border for a distinct design *!*/
+    /*color: red; !* Set the text color to red for contrast *!*/
+    /*text-align: center; !* Center-align the text *!*/
+    /*padding: 10px; !* Add padding for better visual appeal *!*/
+}

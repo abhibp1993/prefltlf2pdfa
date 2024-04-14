@@ -1,5 +1,5 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="prefltlf2pdfa-sample1" type="PythonConfigurationType" factoryName="Python">
+  <configuration default="false" name="semantics-forall-forall" type="PythonConfigurationType" factoryName="Python">
     <module name="prefltlf2pdfa" />
     <option name="INTERPRETER_OPTIONS" value="" />
     <option name="PARENT_ENVS" value="true" />
@@ -14,7 +14,7 @@
     <option name="ADD_SOURCE_ROOTS" value="true" />
     <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
     <option name="SCRIPT_NAME" value="$PROJECT_DIR$/prefltlf2pdfa.py" />
-    <option name="PARAMETERS" value="examples/sample1/sample1.prefltlf --verbosity=DEBUG --loglevel=DEBUG --logfile=examples/sample1/sample1.log --png=examples/sample1/sample1.png --ifiles=examples/sample1/ --output=examples/sample1/sample1.pdfa" />
+    <option name="PARAMETERS" value="examples/semantics_forall_forall/formula.prefltlf --verbosity=DEBUG --loglevel=DEBUG --logfile=examples/semantics_forall_forall/run.log --png=examples/semantics_forall_forall/out.png --ifiles=examples/semantics_forall_forall/ --output=examples/semantics_forall_forall/pdfa.json --semantics=forall_forall" />
     <option name="SHOW_COMMAND_LINE" value="false" />
     <option name="EMULATE_TERMINAL" value="false" />
     <option name="MODULE_MODE" value="false" />
