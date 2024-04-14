@@ -19,7 +19,7 @@ class PrefLTLf:
         self.raw_spec = spec
         self.atoms = set()  # Set of atomic propositions appearing in PrefLTLf specification
         self.alphabet = list(alphabet) if alphabet is not None else None
-        self.phi = list()  # List (indexed set) of LTLf formulas appearing in PrefLTLf specification
+        self.phi = dict()  # Dict (indexed set) of LTLf formulas appearing in PrefLTLf specification
         self.dfa = list()  # List (indexed set) of LTLf formulas appearing in PrefLTLf specification
         self.relation = set()  # Set of triples (PREF_TYPE, LTLf Formula, LTLf Formula) constructed based on given PrefLTLf spec
 
@@ -88,7 +88,8 @@ class PrefLTLf:
         # Construct intermediate representation of standard spec
         phi, spec_ir = self._construct_spec_ir()
         if not self._is_lang_complete(phi):
-            raise ValueError(f"The set of conditions phi = {set(phi.values())} is not complete")
+            # raise ValueError(f"The set of conditions phi = {set(phi.values())} is not complete")
+            logger.warning(f"The set of conditions phi = {set(phi.values())} is not complete")
         print(f"{phi=}")
         print(f"{spec_ir=}")
 
@@ -116,7 +117,7 @@ class PrefLTLf:
         aut.alphabet = self.alphabet
 
         # Translate LTLf formulas in self.phi to DFAs
-        self.dfa = [self._ltlf2dfa(ltlf) for _, ltlf in self.phi.items()]
+        self.dfa = [self._ltlf2dfa(self.phi[i]) for i in sorted(self.phi.keys())]
         assert len(self.dfa) >= 2, f"PrefLTLf spec must have at least two LTLf formulas."
         for dfa in self.dfa:
             logger.info(f"dfa={dfa}")
@@ -279,6 +280,7 @@ class PrefLTLf:
 
     def _construct_preference_graph(self, aut, semantics):
         dfa = self.dfa
+        pg = nx.MultiDiGraph()
 
         # Create partition and add nodes
         for qid, q in aut.get_states(name=True):
@@ -287,15 +289,49 @@ class PrefLTLf:
                 outcomes = self.maximal_outcomes(outcomes)
 
             cls = self._vectorize(outcomes)
-            cls_id = aut.add_class(cls)
-            aut.add_state_to_class(cls_id, q)
+            # cls_id = aut.add_class(cls)
 
-            # Create edges
-        for source_id, target_id in itertools.product(aut.pref_graph.nodes(), aut.pref_graph.nodes()):
-            source = aut.get_class_name(source_id)
-            target = aut.get_class_name(target_id)
+            # Add node to temporary graph
+            if not pg.has_node(cls):
+                pg.add_node(cls, partition={q})
+            else:
+                pg.nodes[cls]["partition"].add(q)
+
+            # aut.add_state_to_class(cls_id, q)
+
+        # Create edges
+        # for source_id, target_id in itertools.product(aut.pref_graph.nodes(), aut.pref_graph.nodes()):
+        for source, target in itertools.product(pg.nodes(), pg.nodes()):
+            # source = aut.get_class_name(source_id)
+            # target = aut.get_class_name(target_id)
             if semantics(self.relation, source, target):
-                aut.add_pref_edge(source_id, target_id)
+                # aut.add_pref_edge(source_id, target_id)
+                pg.add_edge(source, target)
+
+        # Merge partitions if two nodes are indifferent under constructed edge relation
+        scc = nx.strongly_connected_components(pg)
+
+        phi = [self.phi[ltlf_id] for ltlf_id in sorted(self.phi.keys())]
+        state2node = dict()
+        for component in scc:
+            # Define a class name and class id
+            cls_name = []
+            for cls in component:
+                cls_name.append(
+                    " & ".join([str(phi[i]) for i in range(len(phi)) if cls[i] == 1])
+                )
+            cls_name = " | ".join((f"({x})" for x in cls_name))
+            cls_name = str(PARSER(cls_name))
+            cls_id = aut.add_class(cls_name)
+
+            # Add states to partition
+            for cls in component:
+                for q in pg.nodes[cls]["partition"]:
+                    aut.add_state_to_class(cls_id, q)
+                    state2node[cls] = cls_id
+
+        for u, v in pg.edges():
+            aut.add_pref_edge(state2node[u], state2node[v])
 
     def outcomes(self, q):
         return set(i for i in range(len(q)) if q[i] in self.dfa[i]["final_states"])

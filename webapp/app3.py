@@ -473,7 +473,10 @@ def render(pdfa: translate.PrefAutomaton, phi, **kwargs):
 
     # Create color palette
     parts = list(pdfa.pref_graph.nodes())
-    colors = sns.color_palette("pastel", len(pdfa.pref_graph.nodes()))
+    if len(pdfa.pref_graph.nodes()) < 10:
+        colors = sns.color_palette("pastel", n_colors=len(pdfa.pref_graph.nodes()))
+    else:
+        colors = sns.color_palette("viridis", n_colors=len(pdfa.pref_graph.nodes()))
     color_map = {part: colors[i] for i, part in enumerate(parts)}
 
     # Create graph to display semi-automaton
@@ -485,7 +488,7 @@ def render(pdfa: translate.PrefAutomaton, phi, **kwargs):
         st_label = name if sa_state else st
 
         # Append state class if option enabled
-        st_label = f"{st_label}\n({state2class[name]})" if sa_class else st_label
+        st_label = f"{st_label}\n[{state2class[name]}]" if sa_class else st_label
 
         # Add node
         if sa_color:
@@ -512,7 +515,8 @@ def render(pdfa: translate.PrefAutomaton, phi, **kwargs):
 
     # Add nodes to preference graph
     for n, data in pdfa.pref_graph.nodes(data=True):
-        n_label = set(phi[i] for i in range(len(phi)) if data['name'][i] == 1) if pg_state else n
+        # n_label = set(phi[i] for i in range(len(phi)) if data['name'][i] == 1) if pg_state else n
+        n_label = data['name'] if pg_state else n
         if sa_color:
             color = color_map[n]
             color = '#{:02x}{:02x}{:02x}'.format(int(color[0] * 255), int(color[1] * 255), int(color[2] * 255))
