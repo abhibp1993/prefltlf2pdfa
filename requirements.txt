@@ -6,3 +6,5 @@ networkx>=3.1
 dash>=2.14.0
 Pillow>=9.4.0
 sympy>=1.12
+seaborn>=0.13.2
+flask>=3.0.0
