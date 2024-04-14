@@ -412,6 +412,39 @@ def generate_input_dict(text_spec, text_alphabet, chklist_options, ddl_semantics
     return input_dict
 
 
+def translate_to_pdfa(input_dict):
+    # Parse alphabet
+    if input_dict["alphabet"]:
+        alphabet = [ast.literal_eval(s.strip()) for s in input_dict["alphabet"].split("\n")]
+    else:
+        alphabet = set()
+
+    # Parse specification and generate model
+    phi = translate2.PrefLTLf(input_dict["spec"], alphabet=alphabet)
+
+    # Determine semantics function
+    if input_dict["semantics"] == "semantics_ae":
+        semantics = translate2.semantics_forall_exists
+    elif input_dict["semantics"] == "semantics_ea":
+        semantics = translate2.semantics_exists_forall
+    elif input_dict["semantics"] == "semantics_aa":
+        semantics = translate2.semantics_forall_forall
+    elif input_dict["semantics"] == "semantics_mp_ae":
+        semantics = translate2.semantics_mp_forall_exists
+    elif input_dict["semantics"] == "semantics_mp_ea":
+        semantics = translate2.semantics_mp_exists_forall
+    elif input_dict["semantics"] == "semantics_mp_aa":
+        semantics = translate2.semantics_mp_forall_forall
+    else:
+        raise ValueError("Invalid semantics selected.")
+
+    # Translate PrefLTLf to PDFA
+    pdfa = phi.translate(semantics=semantics)
+
+    # Return PDFA
+    return phi, pdfa
+
+
 def render(pdfa: translate2.PrefAutomaton, phi, **kwargs):
     """
     Generates images for semi-automaton and preference graph.
@@ -499,39 +532,6 @@ def render(pdfa: translate2.PrefAutomaton, phi, **kwargs):
 
     # Return images as base64 encoded strings
     return base64.b64encode(sa), base64.b64encode(pg)
-
-
-def translate_to_pdfa(input_dict):
-    # Parse alphabet
-    if input_dict["alphabet"]:
-        alphabet = [ast.literal_eval(s.strip()) for s in input_dict["alphabet"].split("\n")]
-    else:
-        alphabet = set()
-
-    # Parse specification and generate model
-    phi = translate2.PrefLTLf(input_dict["spec"], alphabet=alphabet)
-
-    # Determine semantics function
-    if input_dict["semantics"] == "semantics_ae":
-        semantics = translate2.semantics_forall_exists
-    elif input_dict["semantics"] == "semantics_ea":
-        semantics = translate2.semantics_exists_forall
-    elif input_dict["semantics"] == "semantics_aa":
-        semantics = translate2.semantics_forall_forall
-    elif input_dict["semantics"] == "semantics_mp_ae":
-        semantics = translate2.semantics_mp_forall_exists
-    elif input_dict["semantics"] == "semantics_mp_ea":
-        semantics = translate2.semantics_mp_exists_forall
-    elif input_dict["semantics"] == "semantics_mp_aa":
-        semantics = translate2.semantics_mp_forall_forall
-    else:
-        raise ValueError("Invalid semantics selected.")
-
-    # Translate PrefLTLf to PDFA
-    pdfa = phi.translate(semantics=semantics)
-
-    # Return PDFA
-    return phi, pdfa
 
 
 # ======================================================================================================================
