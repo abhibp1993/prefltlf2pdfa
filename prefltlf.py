@@ -711,6 +711,12 @@ class PrefAutomaton:
         return pprint.pformat(self.serialize())
 
     def serialize(self):
+        #  Collect edges of preference graph
+        pref_nodes = set(self.pref_graph.nodes())
+        pref_edges = {u: set() for u in pref_nodes}
+        for u, v in self.pref_graph.edges():
+            pref_edges[u].add(v)
+
         obj_dict = {
             "states": self.states,
             "atoms": list(self.atoms),
@@ -720,7 +726,8 @@ class PrefAutomaton:
             "pref_graph": {
                 "nodes": {u: {k: list(v) if isinstance(v, set) else v for k, v in data.items()}
                           for u, data in self.pref_graph.nodes(data=True)},
-                "edges": {u: v for u, v in self.pref_graph.edges()}
+                # "edges": {u: v for u, v in self.pref_graph.edges()}
+                "edges": {u: list(v) for u, v in pref_edges.items()}
             }
         }
         return obj_dict
