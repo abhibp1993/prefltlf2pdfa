@@ -1,8 +1,0 @@
-prefltlf 4
-F(a)
-F(b)
-F(c)
-F(d)
->,F(a),F(b)
->,F(a),F(d)
->,F(a),F(c)
