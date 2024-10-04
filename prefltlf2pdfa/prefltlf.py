@@ -69,8 +69,8 @@ class PrefLTLf:
         # Construct intermediate representation of standard spec
         phi, spec_ir = self._construct_spec_ir()
         if not self._is_lang_complete(phi):
-            # raise ValueError(f"The set of conditions phi = {set(phi.values())} is not complete")
-            logger.warning(f"The set of conditions phi = {set(phi.values())} is not complete")
+            raise ValueError(f"The set of conditions phi = {set(phi.values())} is not complete")
+            # logger.warning(f"The set of conditions phi = {set(phi.values())} is not complete")
         # print(f"{phi=}")
         # print(f"{spec_ir=}")
 
@@ -828,12 +828,12 @@ class PrefAutomaton:
 if __name__ == '__main__':
     spec = ("""
     # test
-    prefltlf 4
+    prefltlf 3
 
 
     F a
     G b
-    !(F(a) | G(b))
+    # !(F(a) | G(b))
     true U a
 
     # SPec
