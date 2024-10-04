@@ -729,47 +729,26 @@ class PrefAutomaton:
         }
         return obj_dict
 
-    def serialize2(self):
-        #  Collect edges of preference graph
-        pref_nodes = set(self.pref_graph.nodes())
-        pref_edges = {u: set() for u in pref_nodes}
-        for u, v in self.pref_graph.edges():
-            pref_edges[u].add(v)
-
-        obj_dict = {
-            "states": self.states,
-            "atoms": list(self.atoms),
-            "alphabet": [list(symbol) for symbol in self.alphabet] if self.alphabet is not None else None,
-            "transitions": self.transitions,
-            "init_state": self.init_state,
-            "pref_graph": {
-                "nodes": {u: {k: list(v) if isinstance(v, set) else v for k, v in data.items()}
-                          for u, data in self.pref_graph.nodes(data=True)},
-                # "edges": {u: v for u, v in self.pref_graph.edges()}
-                "edges": {u: list(v) for u, v in pref_edges.items()}
-            }
-        }
-        return obj_dict
-
     @classmethod
     def deserialize(cls, obj_dict):
         aut = cls()
         aut.states = obj_dict["states"]
         aut.atoms = set(obj_dict["atoms"])
-        aut.alphabet = set(obj_dict["alphabet"])
+        aut.alphabet = set(map(tuple, obj_dict["alphabet"]))
         aut.transitions = obj_dict["transitions"]
         aut.init_state = obj_dict["init_state"]
 
-        for node, data in obj_dict["pref_graph"]["nodes"]:
-            aut.pref_graph.add_node(node, **data)
+        for node, data in obj_dict["pref_graph"]["nodes"].items():
+            aut.pref_graph.add_node(int(node), **data)
 
-        for u, v in obj_dict["pref_graph"]["edges"]:
-            aut.pref_graph.add_edge(u, v)
+        for u, vs in obj_dict["pref_graph"]["edges"].items():
+            for v in vs:
+                aut.pref_graph.add_edge(int(u), int(v))
 
         aut._num_states = len(aut.states)
-        aut._num_nodes = len(aut.pref_graph.number_of_nodes())
-        aut._inv_state = {v: k for k, v in aut.states}
-        aut._inv_nodes = {data["name"]: k for k, data in aut.pref_graph.nodes(data=True)}
+        aut._num_nodes = aut.pref_graph.number_of_nodes()
+        aut._inv_state = {tuple(v): k for k, v in aut.states.items()}
+        # aut._inv_nodes = {data["name"]: k for k, data in aut.pref_graph.nodes(data=True)}
 
         return aut
 
