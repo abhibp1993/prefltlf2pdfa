@@ -366,9 +366,9 @@ class PrefLTLf:
 
             # Add node to temporary graph
             if not pg.has_node(cls):
-                pg.add_node(cls, partition={q})
+                pg.add_node(cls, partition={qid})
             else:
-                pg.nodes[cls]["partition"].add(q)
+                pg.nodes[cls]["partition"].add(qid)
 
             # aut.add_state_to_class(cls_id, q)
 
@@ -749,8 +749,44 @@ class PrefAutomaton:
         self._inv_state = dict()
         self._inv_nodes = dict()
 
+    def __eq__(self, other):
+        if isinstance(other, PrefAutomaton):
+            return (
+                    self.states == other.states and
+                    self.atoms == other.atoms and
+                    self.alphabet == other.alphabet and
+                    self.transitions == other.transitions and
+                    self.init_state == other.init_state and
+                    self.pref_graph.nodes(data=True) == other.pref_graph.nodes(data=True) and
+                    set(self.pref_graph.edges()) == set(other.pref_graph.edges())
+            )
+        return False
+
     def __str__(self):
         return pprint.pformat(self.serialize())
+
+    def __getstate__(self):
+        return self.serialize()
+
+    def __setstate__(self, obj_dict):
+        self.states = {int(k): data["name"] for k, data in obj_dict["states"].items()}
+        self.atoms = set(obj_dict["atoms"])
+        self.alphabet = obj_dict["alphabet"]
+        self.transitions = {int(k): v for k, v in obj_dict["transitions"].items()}
+        self.init_state = obj_dict["init_state"]
+        self.pref_graph = nx.MultiDiGraph()
+
+        # Construct preference graph
+        for node, data in obj_dict["pref_graph"]["nodes"].items():
+            self.pref_graph.add_node(int(node), **data)
+
+        for u, vs in obj_dict["pref_graph"]["edges"].items():
+            for v in vs:
+                self.pref_graph.add_edge(int(u), int(v))
+
+        self._num_states = len(self.states)
+        self._num_nodes = self.pref_graph.number_of_nodes()
+        self._inv_state = {tuple(v): k for k, v in self.states.items()}
 
     def serialize(self):
         # Construct state serialization
@@ -758,8 +794,9 @@ class PrefAutomaton:
         state_dict = {k: {"name": v, "partition": None} for k, v in self.states.items()}
         for partition_label, data in self.pref_graph.nodes(data=True):
             for state in data["partition"]:
-                sid = state2node[state]
-                state_dict[sid]["partition"] = partition_label
+                # sid = state2node[state]
+                # state_dict[sid]["partition"] = partition_label
+                state_dict[state]["partition"] = partition_label
 
         #  Collect edges of preference graph
         pref_nodes = set(self.pref_graph.nodes())
@@ -769,12 +806,15 @@ class PrefAutomaton:
 
         obj_dict = {
             "states": state_dict,
-            "atoms": list(self.atoms),
-            "alphabet": [list(symbol) for symbol in self.alphabet] if self.alphabet is not None else None,
+            # "atoms": list(self.atoms),
+            "atoms": self.atoms,
+            # "alphabet": [list(symbol) for symbol in self.alphabet] if self.alphabet is not None else None,
+            "alphabet": self.alphabet,
             "transitions": self.transitions,
             "init_state": self.init_state,
             "pref_graph": {
-                "nodes": {u: {"name": data["name"]}
+                # "nodes": {u: {"name": data["name"], "partition": {state2node[u] for u in data["partition"]}}
+                "nodes": {u: {"name": data["name"], "partition": data["partition"]}
                           for u, data in self.pref_graph.nodes(data=True)},
                 # "edges": {u: v for u, v in self.pref_graph.edges()}
                 "edges": {u: list(v) for u, v in pref_edges.items()}
