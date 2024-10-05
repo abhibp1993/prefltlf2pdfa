@@ -20,12 +20,13 @@ class PrefLTLf:
     MAXIMAL_SEMANTICS = [semantics_mp_forall_exists, semantics_mp_exists_forall, semantics_mp_forall_forall]
 
     def __init__(self, spec, alphabet=None, **kwargs):
+        # Class state variables (will be serialized)
         self.raw_spec = spec
         self.atoms = set()  # Set of atomic propositions appearing in PrefLTLf specification
         self.alphabet = list(alphabet) if alphabet is not None else None
         self.phi = dict()  # Dict (indexed set) of LTLf formulas appearing in PrefLTLf specification
-        self.dfa = list()  # List (indexed set) of LTLf formulas appearing in PrefLTLf specification
         self.relation = set()  # Set of triples (PREF_TYPE, LTLf, LTLf) constructed based on given PrefLTLf spec
+        self.dfa = list()  # List (indexed set) of LTLf formulas appearing in PrefLTLf specification
 
         if not kwargs.get("skip_parse", False):
             self.parse(kwargs.get("auto_complete", "none"))
@@ -54,7 +55,7 @@ class PrefLTLf:
         self.atoms = set(obj_dict["atoms"])
         self.alphabet = set(obj_dict["alphabet"]) if obj_dict["alphabet"] is not None else None
         self.phi = obj_dict["phi"]
-        self.dfa = list()  # List (indexed set) of LTLf formulas appearing in PrefLTLf specification
+        self.dfa = obj_dict["dfa"]
         self.relation = set(obj_dict["relation"])
         self.parse(auto_complete="none")
 
@@ -63,8 +64,9 @@ class PrefLTLf:
             "f_str": self.raw_spec,
             "atoms": list(self.atoms),
             "alphabet": [list(symbol) for symbol in self.alphabet] if self.alphabet is not None else None,
-            "phi": self.phi,
-            "relation": list(self.relation)
+            "phi": {k: str(v) for k, v in self.phi.items()},
+            "relation": list(self.relation),
+            "dfa": self.dfa
         }
         return jsonable_dict
 
@@ -73,14 +75,15 @@ class PrefLTLf:
         formula = cls(spec=obj_dict["f_str"], skip_parse=True)
         formula.atoms = set(obj_dict["atoms"])
         formula.alphabet = set(obj_dict["alphabet"]) if obj_dict["alphabet"] is not None else None
-        formula.phi = obj_dict["phi"]
+        formula.phi = {int(k): PARSER(v) for k, v in obj_dict["phi"].items()}
         formula.relation = set(obj_dict["relation"])
+        formula.dfa = obj_dict["dfa"]
         return formula
 
     @classmethod
-    def from_file(cls, fpath, alphabet=None):
+    def from_file(cls, fpath, alphabet=None, auto_complete="none"):
         with open(fpath, 'r') as f:
-            return cls(f.read(), alphabet=alphabet)
+            return cls(f.read(), alphabet=alphabet, auto_complete=auto_complete)
 
     def parse(self, auto_complete="none"):
         logger.debug(f"Parsing prefltlf formula with {auto_complete=}: \n{self.raw_spec}")
@@ -438,7 +441,16 @@ class PrefLTLf:
 
         # Construct phi: the set of LTLf formulas.
         for i in range(n_phi):
-            phi[i] = PARSER(stmts[i].strip())
+            try:
+                phi[i] = PARSER(stmts[i].strip())
+            except Exception as err:
+                if isinstance(err, lark.exceptions.UnexpectedCharacters):
+                    # logger.debug(str(err))
+                    raise ValueError(
+                        f"Could not parse '{stmts[i].strip()}'. Possible reasons:\n"
+                        f"1. Did you supply {n_phi} formulas as suggested by the specification header?\n"
+                        f"2. LTLf formula is ill-formed"
+                    )
 
         # Eliminate formulas with equivalent languages
         equiv = self._find_equivalent_ltlf(phi)
