@@ -1,7 +1,3 @@
-"""
-Render preference automaton using graphviz.
-"""
-
 import base64
 import pygraphviz
 import os
@@ -11,6 +7,17 @@ from prefltlf2pdfa.prefltlf import PrefAutomaton
 
 
 def _color_palette(n):
+    """
+    Generate a color palette based on the number of colors requested.
+
+    This function utilizes different seaborn color palettes depending on the value of `n`.
+
+    Args:
+        n (int): The number of colors to generate.
+
+    Returns:
+        list: A list of RGB tuples representing the color palette.
+    """
     if n < 10:
         colors = sns.color_palette("pastel", n_colors=n)
     elif n < 20:
@@ -22,6 +29,17 @@ def _color_palette(n):
 
 
 def _create_dot_semi_automaton(paut, node2color, **kwargs):
+    """
+    Create a DOT representation of a semi-automaton.
+
+    Args:
+        paut (PrefAutomaton): The preference automaton to represent.
+        node2color (dict): A mapping from node identifiers to colors.
+        kwargs: Additional options for the representation.
+
+    Returns:
+        AGraph: A pygraphviz AGraph object representing the semi-automaton.
+    """
     # Extract options
     sa_state = kwargs.get("show_sa_state", False)
     sa_class = kwargs.get("show_class", False)
@@ -63,6 +81,17 @@ def _create_dot_semi_automaton(paut, node2color, **kwargs):
 
 
 def _create_dot_pref_graph(paut, node2color, **kwargs):
+    """
+    Create a DOT representation of a preference graph.
+
+    Args:
+        paut (PrefAutomaton): The preference automaton to represent.
+        node2color (dict): A mapping from node identifiers to colors.
+        kwargs: Additional options for the representation.
+
+    Returns:
+        AGraph: A pygraphviz AGraph object representing the preference graph.
+    """
     # Extract options
     sa_color = kwargs.get("show_color", False)
     pg_state = kwargs.get("show_pg_state", False)
@@ -94,11 +123,18 @@ def _create_dot_pref_graph(paut, node2color, **kwargs):
 
 def paut2dot(paut: PrefAutomaton, **kwargs):
     """
-    Generates images for semi-automaton and preference graph.
+    Generate images for semi-automaton and preference graph.
 
-    :param paut: PrefAutomaton
-    :param kwargs: dict of options
-    :return: tuple[base64, base64] Two images as base64 encoded strings
+    Args:
+        paut (PrefAutomaton): The preference automaton to convert.
+        kwargs: Additional options for customizing the representation.
+            - show_sa_state (bool): If True, display the state names in the semi-automaton; otherwise, use state IDs.
+            - show_class (bool): If True, append the state class to the state names in the semi-automaton.
+            - show_color (bool): If True, apply a color palette to the nodes based on their partitions.
+            - show_pg_state (bool): If True, display the names of nodes in the preference graph; otherwise, use node IDs.
+            - engine (str): The drawing engine to use for rendering (default is "dot").
+    Returns:
+        tuple: A tuple containing two images as base64 encoded strings (semi-automaton and preference graph).
     """
 
     # Extract options
@@ -126,6 +162,15 @@ def paut2dot(paut: PrefAutomaton, **kwargs):
 
 
 def paut2png(dot_semi_aut, dot_pref_graph, fpath="", fname="out"):
+    """
+    Save the semi-automaton and preference graph as PNG images.
+
+    Args:
+        dot_semi_aut (AGraph): The DOT representation of the semi-automaton.
+        dot_pref_graph (AGraph): The DOT representation of the preference graph.
+        fpath (str): The file path where images should be saved.
+        fname (str): The base name for the output files (without extension).
+    """
     if ".png" in fname:
         fname = fname[:-4]
 
@@ -135,6 +180,15 @@ def paut2png(dot_semi_aut, dot_pref_graph, fpath="", fname="out"):
 
 
 def paut2svg(dot_semi_aut, dot_pref_graph, fpath="", fname="out"):
+    """
+    Save the semi-automaton and preference graph as SVG images.
+
+    Args:
+        dot_semi_aut (AGraph): The DOT representation of the semi-automaton.
+        dot_pref_graph (AGraph): The DOT representation of the preference graph.
+        fpath (str): The file path where images should be saved.
+        fname (str): The base name for the output files (without extension).
+    """
     if ".svg" in fname:
         fname = fname[:-4]
 
@@ -144,6 +198,16 @@ def paut2svg(dot_semi_aut, dot_pref_graph, fpath="", fname="out"):
 
 
 def paut2base64(dot_semi_aut, dot_pref_graph):
+    """
+    Convert the semi-automaton and preference graph images to base64 format. Useful for display on html pages.
+
+    Args:
+        dot_semi_aut (AGraph): The DOT representation of the semi-automaton.
+        dot_pref_graph (AGraph): The DOT representation of the preference graph.
+
+    Returns:
+        tuple: A tuple containing two base64 encoded strings (semi-automaton and preference graph).
+    """
     sa = dot_semi_aut.draw(path=None, format="png")
     pg = dot_pref_graph.draw(path=None, format="png")
     return base64.b64encode(sa), base64.b64encode(pg)

@@ -1,3 +1,17 @@
+"""
+Module for handling PrefLTLf formulas and converting them to preference automata.
+PrefLTLf formulas enable expressing preferences over LTLf formulas.
+
+This module utilizes the `ltlf2dfa` library to parse and process LTLf formulas
+into preference deterministic finite automata (PDFA). It also provides functions for
+validating and manipulating preference automata.
+
+.. note:: The module checks for the presence of the `mona` tool, which is essential
+    for translating LTLf to PDFA. If `mona` is not found, a warning message is printed
+    to inform the user. In this case, the `translate` functionality may not work properly,
+    but the remaining functions work okay.
+"""
+
 import itertools
 import lark.exceptions
 import networkx as nx
@@ -22,6 +36,9 @@ command = "mona --help"
 try:
     result = subprocess.run(command, shell=True, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if "Usage: mona [options] <filename>" not in result.stdout:
+        YELLOW = '\033[33m'
+        RESET = '\033[0m'
+        print(f"{YELLOW}Mona not found on your system. The tool may not translate LTLf to PDFA properly.{RESET}")
         logger.warning("Mona not found on your system. The tool may not translate LTLf to PDFA properly.")
 
         # Output and return code
@@ -35,11 +52,58 @@ except Exception as e:
 
 class PrefLTLf:
     """
-    Represents a PrefLTLf formula.
+    Represents a PrefLTLf (Preference Linear Temporal Logic over Finite Traces) formula.
+
+    The class is used to define, parse, and serialize PrefLTLf specifications,
+    as well as to translate the formulas into automata.
+
+    Attributes
+    ----------
+    raw_spec : str
+        The raw specification of the PrefLTLf formula.
+
+    atoms : set
+        Set of atomic propositions appearing in the PrefLTLf specification.
+
+    alphabet : list
+        A list representing the alphabet for the specification, or `None` if not provided.
+
+    phi : dict
+        A dictionary of LTLf formulas appearing in the PrefLTLf specification.
+
+    relation : set
+        A set of triples (PREF_TYPE, LTLf, LTLf) constructed based on the given PrefLTLf specification.
+
     """
     MAXIMAL_SEMANTICS = [semantics_mp_forall_exists, semantics_mp_exists_forall, semantics_mp_forall_forall]
 
     def __init__(self, spec, alphabet=None, **kwargs):
+        """
+        Initializes the PrefLTLf formula.
+
+        Parameters
+        ----------
+        spec : str
+            The raw specification of the PrefLTLf formula.
+
+        alphabet : list, optional
+            The alphabet for the specification (default is None).
+
+        **kwargs
+            Additional options for parsing and handling the formula.
+
+            - skip_parse : bool, optional
+                If True, skips the parsing of the formula during initialization. Default is False.
+
+            - auto_complete : str, optional
+                Specifies how the formula should handle incomplete preferences when parsing. The acceptable options are:
+
+                * "none": No auto-completion. The formula must be fully specified, and any incompleteness will raise an error.
+                * "incomparable": If preferences are incomplete, auto-completes them by marking certain conditions as incomparable.
+                * "minimal": Auto-completes the preferences by adding the minimal number of relations needed to make the preferences complete.
+
+                Default is "none".
+        """
         # Class state variables (will be serialized)
         self.raw_spec = spec
         self.atoms = set()  # Set of atomic propositions appearing in PrefLTLf specification
@@ -82,6 +146,14 @@ class PrefLTLf:
         self.parse(auto_complete="none")
 
     def serialize(self):
+        """
+        Serializes the PrefLTLf formula into a JSON-compatible dictionary.
+
+        Returns
+        -------
+        dict
+            A dictionary representing the serialized PrefLTLf formula.
+        """
         jsonable_dict = {
             "f_str": self.raw_spec,
             "atoms": list(self.atoms),
@@ -94,6 +166,19 @@ class PrefLTLf:
 
     @classmethod
     def deserialize(cls, obj_dict):
+        """
+        Creates a PrefLTLf formula from a serialized dictionary.
+
+        Parameters
+        ----------
+        obj_dict : dict
+            A dictionary representing the serialized PrefLTLf formula.
+
+        Returns
+        -------
+        PrefLTLf
+            A new instance of the PrefLTLf formula.
+        """
         formula = cls(spec=obj_dict["f_str"], skip_parse=True)
         formula.atoms = set(obj_dict["atoms"])
         formula.alphabet = set(obj_dict["alphabet"]) if obj_dict["alphabet"] is not None else None
@@ -104,10 +189,45 @@ class PrefLTLf:
 
     @classmethod
     def from_file(cls, fpath, alphabet=None, auto_complete="none"):
+        """
+        Reads a PrefLTLf formula from a file.
+
+        Parameters
+        ----------
+        fpath : str
+            The file path to read the formula from.
+
+        alphabet : list, optional
+            The alphabet for the specification (default is None).
+
+        auto_complete : str, optional
+            The auto-completion method to use (default is "none").
+
+        Returns
+        -------
+        PrefLTLf
+            A new instance of the PrefLTLf formula.
+        """
         with open(fpath, 'r') as f:
             return cls(f.read(), alphabet=alphabet, auto_complete=auto_complete)
 
     def parse(self, auto_complete="none"):
+        """
+        Parses the raw PrefLTLf formula and constructs the atomic propositions, relation, and LTLf formulas.
+
+        Parameters
+        ----------
+        auto_complete : str, optional
+            The method to use for auto-completion (default is "none").
+
+        Returns
+        -------
+        tuple
+            A tuple containing
+            - phi: Dictionary of {formula-id: LTLf Formula}
+            - model: Set of binary relation of form (a, b) representing a is weakly preferred to b.
+            - atoms: Set of strings representing atoms.
+        """
         logger.debug(f"Parsing prefltlf formula with {auto_complete=}: \n{self.raw_spec}")
 
         # Check auto_complete inputs
@@ -149,6 +269,22 @@ class PrefLTLf:
         return phi, model, atoms
 
     def translate(self, semantics=semantics_mp_forall_exists, show_progress=False):
+        """
+        Translates the PrefLTLf formula into a preference automaton under the given semantics.
+
+        Parameters
+        ----------
+        semantics : function, optional
+            The semantics function to use for translation (default is `semantics_mp_forall_exists`).
+
+        show_progress : bool, optional
+            Whether to show progress during translation (default is False).
+
+        Returns
+        -------
+        PrefAutomaton
+            The resulting preference automaton.
+        """
         logger.debug(
             f"Translating the formula to preference automaton under semantics=`{semantics.__name__}`:\n{self.raw_spec}"
         )
@@ -182,6 +318,15 @@ class PrefLTLf:
     # noinspection PyMethodMayBeStatic
 
     def _parse_header(self):
+        """
+        Parses the header of the PrefLTLf specification.
+
+        The header should be in the form: `prefltlf <num_formula>`.
+
+        :raises ValueError: If the header is not well-formed or if the formula type is not 'prefltlf'.
+        :return: A list containing the formula type and the number of formulas.
+        :rtype: list
+        """
         stmts = (line.strip() for line in self.raw_spec.split("\n"))
         stmts = [line for line in stmts if line and not line.startswith("#")]
         header = stmts[0]
@@ -200,6 +345,14 @@ class PrefLTLf:
     # noinspection PyMethodMayBeStatic
 
     def _parse_ltlf(self, raw_spec):
+        """
+        Parses the raw specification into LTLf formulas and extracts atomic propositions.
+
+        :param raw_spec: List of LTLf formula strings.
+        :type raw_spec: list
+        :return: A tuple containing a set of atomic propositions and a list of parsed LTLf formulas.
+        :rtype: tuple(set, list)
+        """
         atoms = set()
         phi = list()
         for formula in raw_spec:
@@ -211,6 +364,15 @@ class PrefLTLf:
     # noinspection PyMethodMayBeStatic
 
     def _parse_relation(self, raw_spec):
+        """
+        Parses the relation part of the PrefLTLf specification.
+
+        :param raw_spec: List of preference relations (e.g., '>, >=, ~, <>').
+        :type raw_spec: list
+        :raises AssertionError: If an unrecognized operator is encountered.
+        :return: A set of preference relations.
+        :rtype: set
+        """
         relation = set()
         for formula in raw_spec:
             # Split line into operator, left formula, right formula.
@@ -231,6 +393,14 @@ class PrefLTLf:
         return relation
 
     def _build_preorder(self, relation_spec):
+        """
+        Builds the preorder relation based on the parsed specification.
+
+        :param relation_spec: Set of preference relations.
+        :type relation_spec: set
+        :return: A set representing the preorder relation.
+        :rtype: set
+        """
         preorder = set()
 
         # First, process the non-incomparability formulas because they add elements to preorder relation.
@@ -275,6 +445,14 @@ class PrefLTLf:
     # noinspection PyMethodMayBeStatic
 
     def _transitive_closure(self, preorder):
+        """
+        Computes the transitive closure of a preorder relation.
+
+        :param preorder: Set of pairs representing the preorder relation.
+        :type preorder: set
+        :return: A set representing the transitive closure of the preorder.
+        :rtype: set
+        """
         closure = set(preorder)
         while True:
             new_relations = set((x, w) for x, y in closure for q, w in closure if q == y)
@@ -285,6 +463,15 @@ class PrefLTLf:
         return closure
 
     def _construct_semi_automaton(self, aut, show_progress=False):
+        """
+        Constructs a semi-automaton from a set of DFA states and transitions.
+
+        :param aut: A PrefAutomaton object where the semi-automaton will be stored.
+        :type aut: PrefAutomaton
+        :param show_progress: Whether to display a progress bar for the construction.
+        :type show_progress: bool
+        :return: None
+        """
         dfa = aut.dfa
 
         # Initial state
@@ -347,6 +534,17 @@ class PrefLTLf:
             aut.add_transition(q, p, cond)
 
     def _construct_preference_graph(self, aut, semantics, show_progress=False):
+        """
+        Constructs a preference graph based on the automaton and the given semantics.
+
+        :param aut: A PrefAutomaton object where the preference graph will be stored.
+        :type aut: PrefAutomaton
+        :param semantics: A semantics function determining how preferences are interpreted.
+        :type semantics: function
+        :param show_progress: Whether to display a progress bar for the construction.
+        :type show_progress: bool
+        :return: None
+        """
         # dfa = self.dfa
         pg = nx.MultiDiGraph()
 
@@ -413,13 +611,15 @@ class PrefLTLf:
 
     def _construct_spec_ir(self):
         """
-        Construct intermediate representation of PrefLTLf specification.
+        Constructs an intermediate representation (IR) of the PrefLTLf specification.
 
-        Steps:
-            1. Extract LTLf formulas from the specification.
-            2. Eliminate duplicate LTLf formulas (based on language equivalence).
+        The IR consists of:
+            1. LTLf formulas parsed from the specification.
+            2. The preference relation between formulas.
 
-        :return: (phi, spec_ir)
+        :raises ValueError: If a formula cannot be parsed.
+        :return: A tuple containing a dictionary of LTLf formulas and a list of preference relations.
+        :rtype: tuple(dict, list)
         """
         # Initialize outputs
         phi = dict()
@@ -480,6 +680,14 @@ class PrefLTLf:
 
     # noinspection PyMethodMayBeStatic
     def _auto_complete(self, phi, spec_ir, auto_complete):
+        """
+        Handles the automatic completion of a set of LTLf formulas `phi`.
+
+        :param phi: Dictionary of LTLf formulas.
+        :param spec_ir: Intermediate representation of preferences.
+        :param auto_complete: Specifies the auto-completion method to apply ("minimal" or "incomparable").
+        :return: Tuple containing the updated `phi` and `spec_ir`.
+        """
         # Determine completion formula
         completion_formula = " | ".join([f"({varphi})" for varphi in phi.values()])
         completion_formula = f"!({completion_formula})"
@@ -507,6 +715,12 @@ class PrefLTLf:
 
     # noinspection PyMethodMayBeStatic
     def _is_lang_complete(self, phi):
+        """
+        Checks if the language of a set of LTLf formulas is complete, i.e., whether it covers all possible behaviors.
+
+        :param phi: Dictionary of LTLf formulas.
+        :return: Boolean indicating whether the language is complete.
+        """
         formula = " | ".join([f"({varphi})" for varphi in phi.values()])
         equiv_formula = PARSER(formula)
         dfa = utils.ltlf2dfa(equiv_formula)
@@ -518,11 +732,11 @@ class PrefLTLf:
 
     def _build_partial_order(self, phi, pref_stmts):
         """
-        Constructs a partial order on phi using preference statements.
+        Constructs a partial order based on the provided preference statements and formulas.
 
-        :param phi: List of LTLf formulas
-        :param pref_stmts: List of preference statements of form (op, l_index, r_index).
-        :return:
+        :param phi: Dictionary of LTLf formulas.
+        :param pref_stmts: List of preference statements in the form (op, l_index, r_index).
+        :return: Tuple containing the updated `phi` and the constructed partial order.
         """
         # Construct P, P', I, J sets
         set_w = set()
@@ -624,12 +838,12 @@ class PrefLTLf:
     # noinspection PyMethodMayBeStatic
     def _find_equivalent_ltlf(self, phi):
         """
-        Returns a set of tuples containing equivalent LTLf formulas.
+        Identifies equivalent LTLf formulas from the given set of formulas.
 
-        :param phi: List of LTLf formulas
-        :return: A set of tuples containing equivalent LTLf formulas.
+        :param phi: Dictionary of LTLf formulas.
+        :return: A set of tuples containing pairs of equivalent formulas.
 
-        .. note:: O(n^2) algorithm.
+        .. note:: O(n^2) complexity.
         """
         # Initialize output
         equiv_formulas = set()
@@ -656,14 +870,11 @@ class PrefLTLf:
     # noinspection PyMethodMayBeStatic
     def _process_equiv_ltlf(self, phi, equiv):
         """
-        Approach: Construct an undirected graph with equivalent LTLf formulas as nodes.
-            Two nodes have an edge between them <=> they are equivalent.
-            SCC's in this graph partitions the LTLf formulas.
-            Pick one formula to represent each SCC. Replace all others.
+        Processes and merges equivalent LTLf formulas into a single representative formula.
 
-        :param phi: Dictionary mapping integer id to LTLf formulas
-        :param equiv: Set of tuples containing equivalent LTLf formulas.
-        :return: Tuple containing new phi and replacement dictionary.
+        :param phi: Dictionary of LTLf formulas.
+        :param equiv: Set of tuples representing equivalent formulas.
+        :return: Tuple containing the new set of formulas and a dictionary for formula replacements.
         """
         # Construct equivalence graph
         equiv_graph = nx.DiGraph()
@@ -690,6 +901,13 @@ class PrefLTLf:
 
     # noinspection PyMethodMayBeStatic
     def _pre_to_partial_order(self, phi, preorder):
+        """
+        Converts a preorder (which may contain indifferent alternatives) to a partial order by resolving indifference.
+
+        :param phi: Dictionary of LTLf formulas.
+        :param preorder: Set representing the preorder relations.
+        :return: Tuple containing the updated `phi` and the constructed partial order.
+        """
         # Initialize output
         partial_order = set()
 
