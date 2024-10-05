@@ -148,7 +148,7 @@ class PrefLTLf:
 
         return phi, model, atoms
 
-    def translate(self, semantics):
+    def translate(self, semantics=semantics_mp_forall_exists, show_progress=False):
         logger.debug(
             f"Translating the formula to preference automaton under semantics=`{semantics.__name__}`:\n{self.raw_spec}"
         )
@@ -295,62 +295,73 @@ class PrefLTLf:
         queue = [q0]
         explored = set()
         transitions = set()
-        while queue:
-            # Visit next state
-            q = queue.pop()
-            explored.add(q)
+        with tqdm(total=len(queue), desc="Constructing semi-automaton", disable=not show_progress) as pbar:
+            while queue:
+                # Visit next state
+                q = queue.pop()
+                explored.add(q)
 
-            # Add state to preference automaton
-            aut.add_state(q)
+                # Add state to preference automaton
+                aut.add_state(q)
 
-            # Add transitions to product dfa
-            # Pick one outgoing edge from each of the sub-DFA states in q.
-            for condition_on_edges in itertools.product(*[dfa[i]['transitions'][q[i]].keys() for i in range(len(dfa))]):
-                # Define condition for synchronous transition of selected edges (AND-ing of all conditions)
-                cond = sympy.sympify(("(" + ") & (".join(condition_on_edges) + ")").replace("!", "~")).simplify()
-
-                # If alphabet is provided, require that at least one symbol enables the condition.
-                # if self.alphabet is None or all(not evaluate(spot.formula(formula), true_atoms) for true_atoms in alphabet):
-                if (
-                        self.alphabet and
-                        all(
-                            not cond.subs({atom: True if atom in true_atoms else False for atom in self.atoms})
-                            for true_atoms in self.alphabet
-                        )
+                # Add transitions to product dfa
+                # Pick one outgoing edge from each of the sub-DFA states in q.
+                for condition_on_edges in itertools.product(
+                        *[dfa[i]['transitions'][q[i]].keys() for i in range(len(dfa))]
                 ):
-                    continue
+                    # Define condition for synchronous transition of selected edges (AND-ing of all conditions)
+                    cond = sympy.sympify(("(" + ") & (".join(condition_on_edges) + ")").replace("!", "~")).simplify()
 
-                    # If label is false, then the synchronous transition is not valid.
-                if cond == sympy.false:
-                    continue
+                    # If alphabet is provided, require that at least one symbol enables the condition.
+                    if (
+                            self.alphabet and
+                            all(
+                                not cond.subs({atom: True if atom in true_atoms else False for atom in self.atoms})
+                                for true_atoms in self.alphabet
+                            )
+                    ):
+                        continue
 
-                    # Otherwise, add transition
-                cond = (str(cond).replace("~", "!").
-                        replace("True", "true").
-                        replace("False", "false"))
+                        # If label is false, then the synchronous transition is not valid.
+                    if cond == sympy.false:
+                        continue
 
-                q_next = tuple([dfa[i]['transitions'][q[i]][condition_on_edges[i]] for i in range(len(dfa))])
-                if q_next not in explored:
-                    queue.append(q_next)
+                        # Otherwise, add transition
+                    cond = (str(cond).replace("~", "!").
+                            replace("True", "true").
+                            replace("False", "false"))
 
-                    # Add transition to preference automaton
-                transitions.add((q, q_next, cond))
+                    q_next = tuple([dfa[i]['transitions'][q[i]][condition_on_edges[i]] for i in range(len(dfa))])
+                    if q_next not in explored:
+                        queue.append(q_next)
+
+                        # Add transition to preference automaton
+                    transitions.add((q, q_next, cond))
+
+                # Update tqdm progress bar
+                pbar.update(1)
+                pbar.total = len(queue) + pbar.n
+                pbar.refresh()
 
         for q, p, cond in transitions:
             aut.add_transition(q, p, cond)
 
-    def _construct_preference_graph(self, aut, semantics):
+    def _construct_preference_graph(self, aut, semantics, show_progress=False):
         # dfa = self.dfa
         pg = nx.MultiDiGraph()
 
         # Create partition and add nodes
-        for qid, data in aut.get_states(data=True):
+        for qid, data in tqdm(
+                aut.get_states(data=True),
+                desc="Constructing preference graph nodes",
+                disable=not show_progress
+        ):
             q = data["name"]
-            outcomes = self.outcomes(q)
+            outcomes = utils.outcomes(aut.dfa, q)
             if semantics in PrefLTLf.MAXIMAL_SEMANTICS:
-                outcomes = self.maximal_outcomes(outcomes)
+                outcomes = utils.maximal_outcomes(self.relation, outcomes)
 
-            cls = self._vectorize(outcomes)
+            cls = utils.vectorize(aut.dfa, outcomes)
             # cls_id = aut.add_class(cls)
 
             # Add node to temporary graph
@@ -363,7 +374,12 @@ class PrefLTLf:
 
         # Create edges
         # for source_id, target_id in itertools.product(aut.pref_graph.nodes(), aut.pref_graph.nodes()):
-        for source, target in itertools.product(pg.nodes(), pg.nodes()):
+        for source, target in tqdm(
+                itertools.product(pg.nodes(), pg.nodes()),
+                total=pg.number_of_nodes() ** 2,
+                desc="Constructing preference graph edges",
+                disable=not show_progress
+        ):
             # source = aut.get_class_name(source_id)
             # target = aut.get_class_name(target_id)
             if semantics(self.relation, source, target):
@@ -462,6 +478,7 @@ class PrefLTLf:
         # Return intermediate representation
         return compact_phi, list(spec_ir)
 
+    # noinspection PyMethodMayBeStatic
     def _auto_complete(self, phi, spec_ir, auto_complete):
         # Determine completion formula
         completion_formula = " | ".join([f"({varphi})" for varphi in phi.values()])
@@ -533,11 +550,15 @@ class PrefLTLf:
         for varphi1, varphi2 in set_w:
             if (varphi1, varphi2) in set_j:
                 raise ValueError(
-                    f"Inconsistent specification: {phi[varphi1]} >= {phi[varphi2]} and {phi[varphi1]} <> {phi[varphi2]}.")
+                    f"Inconsistent specification: "
+                    f"{phi[varphi1]} >= {phi[varphi2]} and {phi[varphi1]} <> {phi[varphi2]}."
+                )
 
             elif (varphi2, varphi1) in set_p:
                 raise ValueError(
-                    f"Inconsistent specification: {phi[varphi1]} >= {phi[varphi2]} and {phi[varphi2]} > {phi[varphi1]}.")
+                    f"Inconsistent specification: "
+                    f"{phi[varphi1]} >= {phi[varphi2]} and {phi[varphi2]} > {phi[varphi1]}."
+                )
 
             elif (varphi1, varphi2) in set_p | set_i:
                 pass
@@ -600,6 +621,7 @@ class PrefLTLf:
         logger.debug(f"Partial order for input specification:\n{phi=}\n{model=}\nmodel={log_model}")
         return phi, model
 
+    # noinspection PyMethodMayBeStatic
     def _find_equivalent_ltlf(self, phi):
         """
         Returns a set of tuples containing equivalent LTLf formulas.
@@ -630,53 +652,6 @@ class PrefLTLf:
                 # print(equiv_formula, dfa)
 
         return equiv_formulas
-
-    # noinspection PyMethodMayBeStatic
-    def _process_equiv_ltlf2(self, phi, model, equiv):
-        """
-        Approach: Construct an undirected graph with equivalent LTLf formulas as nodes.
-            Two nodes have an edge between them <=> they are equivalent.
-            SCC's in this graph partitions the LTLf formulas.
-            Pick one formula to represent each SCC. Replace all others.
-
-        :param phi:
-        :param model:
-        :param equiv:
-        :return:
-        """
-        # Initialize output
-        # n_phi = list()
-        n_spec_ir = set()
-
-        # Construct equivalence graph
-        equiv_graph = nx.DiGraph()
-
-        for u, v in equiv:
-            equiv_graph.add_edge(u, v)
-            equiv_graph.add_edge(v, u)
-
-        # equiv_graph.add_edges_from(equiv)
-        scc = list(nx.strongly_connected_components(equiv_graph))
-        # print(scc)
-
-        # Replace any formula index in atomic spec with minimum value from the strongly connected component.
-        for l_idx, r_idx in model:
-            for component in scc:
-                if l_idx in component:
-                    l_idx = min(component)
-                if r_idx in component:
-                    r_idx = min(component)
-            n_spec_ir.add((l_idx, r_idx))
-
-        # Construct new phi
-        idx_to_remove = set()
-        for component in scc:
-            idx_to_remove.update(component - {min(component)})
-
-        n_phi = {k: v for k, v in phi.items() if k not in idx_to_remove}
-
-        # print(n_phi, n_spec_ir)
-        return n_phi, n_spec_ir
 
     # noinspection PyMethodMayBeStatic
     def _process_equiv_ltlf(self, phi, equiv):
@@ -882,28 +857,3 @@ class PrefAutomaton:
         assert self.pref_graph.has_node(
             target_id), f"Cannot add preference edge. {target_id=} not in preference graph. "
         self.pref_graph.add_edge(source_id, target_id)
-
-
-if __name__ == '__main__':
-    spec = ("""
-    # test
-    prefltlf 3
-
-
-    F a
-    G b
-    # !(F(a) | G(b))
-    true U a
-
-    # Spec
-    >, 0, 1
-    >=, 0, 2
-    >=, 2, 1
-    """)
-
-    formula = PrefLTLf(spec, auto_complete="minimal")
-    aut = formula.translate(semantics=semantics_mp_forall_exists)
-
-    from pprint import pprint
-
-    pprint(aut.serialize())
