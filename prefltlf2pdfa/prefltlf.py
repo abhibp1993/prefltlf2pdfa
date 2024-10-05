@@ -1,4 +1,6 @@
 import itertools
+
+import lark.exceptions
 import networkx as nx
 import pprint
 import pygraphviz
@@ -479,7 +481,7 @@ class PrefLTLf:
             f"{l_index}:{compact_phi[l_index]}  {pref_type}  {r_index}:{compact_phi[r_index]}"
             for pref_type, l_index, r_index in spec_ir
         ]
-        logger.debug(f"Intermediate representation based on raw input: {log_string}")
+        logger.debug(f"Intermediate representation based on raw input: \n{pprint.pformat(log_string)}")
 
         # Return intermediate representation
         return compact_phi, list(spec_ir)
@@ -577,8 +579,15 @@ class PrefLTLf:
 
         # Consistency check
         if any((varphi1, varphi1) in set_p for varphi1 in phi):
-            raise ValueError(f"Inconsistent specification: Reflexivity violated. "
-                             f"{[(varphi1, varphi1) in set_p for varphi1 in phi]} in P.")
+            graph_ = nx.DiGraph()
+            graph_.add_nodes_from(phi.keys())
+            graph_.add_edges_from([(j, i) for i, j in set_p])
+            cycles = sorted(nx.simple_cycles(graph_))
+            cycles = [list(map(phi.get, cycle)) for cycle in cycles if len(cycle) >= 3]
+            raise ValueError(
+                f"Inconsistent specification: Cyclic preferences detected in P. "
+                f"Cycles after transitive closure: \n{pprint.pformat(cycles)}"
+            )
 
         if any((varphi2, varphi1) in set_p for varphi1, varphi2 in set_p):
             raise ValueError(f"Inconsistent specification: Strictness violated. "
