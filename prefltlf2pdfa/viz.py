@@ -13,8 +13,10 @@ from prefltlf2pdfa.prefltlf import PrefAutomaton
 def _color_palette(n):
     if n < 10:
         colors = sns.color_palette("pastel", n_colors=n)
-    else:
+    elif n < 20:
         colors = sns.color_palette("viridis", n_colors=n)
+    else:
+        colors = [(1, 1, 1) for _ in range(n)]
 
     return colors
 
