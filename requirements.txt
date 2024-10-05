@@ -1,6 +1,6 @@
-networkx~=3.1
-pygraphviz~=1.9
-sympy~=1.12
-ltlf2dfa~=1.0.2
-loguru~=0.7.2
-seaborn~=0.13.2
+networkx
+pygraphviz
+sympy
+ltlf2dfa
+loguru
+seaborn
