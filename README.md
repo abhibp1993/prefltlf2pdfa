@@ -36,4 +36,8 @@ You can follow the instructions on http://www.brics.dk/mona/download.html to get
 
 ### Installing prefltlf2pdfa 
 
-Install using `python setup.py install`. 
+```
+git clone https://github.com/abhibp1993/prefltlf2pdfa.git
+cd prefltlf2pdfa
+pip install .
+```
