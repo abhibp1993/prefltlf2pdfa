@@ -1,0 +1,13 @@
+# Inconsistent specification
+prefltlf 4
+
+# Formulas
+F a
+G b
+F c
+!(F(a) | G(b) | F(c))
+
+# Specification
+>, 0, 1
+>, 1, 2
+>, 2, 0

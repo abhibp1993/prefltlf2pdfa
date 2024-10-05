@@ -1,0 +1,11 @@
+prefltlf 3
+
+# Formulas
+F a
+G b
+!(F(a) | G(b))
+
+# Specification
+>, 0, 1
+>, 0, 2
+>=, 1, 2

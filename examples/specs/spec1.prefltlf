@@ -1,0 +1,14 @@
+# Checks all preference operators
+prefltlf 4
+
+# Formulas
+F a
+G b
+F c
+!(F(a) | G(b) | F(c))
+
+# Specification
+>, 0, 1
+>=, 0, 2
+<>, 1, 2
+~, 2, 3
