@@ -9,7 +9,7 @@ from loguru import logger
 from networkx.drawing import nx_agraph
 from prefltlf2pdfa.semantics import *
 
-logger.remove()
+# logger.remove()
 PARSER = LTLfParser()
 
 
@@ -25,7 +25,7 @@ class PrefLTLf:
         self.alphabet = list(alphabet) if alphabet is not None else None
         self.phi = dict()  # Dict (indexed set) of LTLf formulas appearing in PrefLTLf specification
         self.dfa = list()  # List (indexed set) of LTLf formulas appearing in PrefLTLf specification
-        self.relation = set()  # Set of triples (PREF_TYPE, LTLf Formula, LTLf Formula) constructed based on given PrefLTLf spec
+        self.relation = set()  # Set of triples (PREF_TYPE, LTLf, LTLf) constructed based on given PrefLTLf spec
 
         if not kwargs.get("skip_parse", False):
             self.parse(kwargs.get("auto_complete", "none"))
@@ -53,10 +53,9 @@ class PrefLTLf:
             "f_str": self.raw_spec,
             "atoms": list(self.atoms),
             "alphabet": [list(symbol) for symbol in self.alphabet] if self.alphabet is not None else None,
-            "phi": [str(f) for f in self.phi],
+            "phi": self.phi,
             "relation": list(self.relation)
         }
-        logger.debug(pprint.pformat(jsonable_dict))
         return jsonable_dict
 
     @classmethod
@@ -74,16 +73,19 @@ class PrefLTLf:
             return cls(f.read(), alphabet=alphabet)
 
     def parse(self, auto_complete="none"):
+        logger.debug(f"Parsing prefltlf formula with {auto_complete=}: \n{self.raw_spec}")
+
         # Check auto_complete inputs
         if auto_complete not in ["none", "incomparable", "minimal"]:
             logger.error(
                 f"Unknown auto_complete value '{auto_complete}' to parse function. "
-                f"Accepted values are {['none', 'incomparable', 'minimal']}."
+                f"Accepted values are {['none', 'incomparable', 'minimal']}. "
+                f"New auto_complete value is set to 'none'."
             )
+            auto_complete = "none"
 
-        # Parse header. Ensure that the spec is well-formed and a PrefLTLf formula.
-        header = self._parse_header()
-        logger.debug(f"{header=}")
+        # # Parse header. Ensure that the spec is well-formed and a PrefLTLf formula.
+        # header = self._parse_header()
 
         # Construct intermediate representation of standard spec
         phi, spec_ir = self._construct_spec_ir()
@@ -112,6 +114,10 @@ class PrefLTLf:
         return phi, model, atoms
 
     def translate(self, semantics):
+        logger.debug(
+            f"Translating the formula to preference automaton under semantics=`{semantics.__name__}`:\n{self.raw_spec}"
+        )
+
         # Define preference automaton and set basic attributes
         aut = PrefAutomaton()
         aut.atoms = self.atoms
@@ -120,10 +126,10 @@ class PrefLTLf:
         # Translate LTLf formulas in self.phi to DFAs
         self.dfa = [self._ltlf2dfa(self.phi[i]) for i in sorted(self.phi.keys())]
         assert len(self.dfa) >= 2, f"PrefLTLf spec must have at least two LTLf formulas."
-        for dfa in self.dfa:
-            logger.info(f"dfa={dfa}")
+        # for dfa in self.dfa:
+        #     logger.info(f"dfa={dfa}")
 
-            # Compute union product of DFAs
+        # Compute union product of DFAs
         self._construct_underlying_graph(aut)
 
         # Construct preference graph
@@ -361,11 +367,11 @@ class PrefLTLf:
     def _ltlf2dfa(self, ltlf_formula):
         # Use LTLf2DFA to convert LTLf formula to DFA.
         dot = ltlf_formula.to_dfa()
-        logger.info(f"{ltlf_formula=}, dot={dot}")
+        # logger.info(f"{ltlf_formula=}, dot={dot}")
 
         # Convert dot to networkx MultiDiGraph.
         dot_graph = nx_agraph.from_agraph(pygraphviz.AGraph(dot))
-        logger.info(f"{ltlf_formula=}, dot={dot_graph}")
+        # logger.info(f"{ltlf_formula=}, dot={dot_graph}")
 
         # Construct DFA dictionary using networkx MultiDiGraph.
         dfa = dict()
@@ -395,7 +401,7 @@ class PrefLTLf:
 
             dfa["transitions"][u][d['label']] = v
 
-        logger.info(f"ltlf_formula={ltlf_formula}, dfa={dfa}")
+        # logger.info(f"ltlf_formula={ltlf_formula}, dfa={dfa}")
         return dfa
 
     def _construct_spec_ir(self):
@@ -420,7 +426,7 @@ class PrefLTLf:
         header = self._parse_header()
         n_phi = header[1]
 
-        # Construct phi: the set of conditions, i.e., LTLf formulas.
+        # Construct phi: the set of LTLf formulas.
         for i in range(n_phi):
             phi[i] = PARSER(stmts[i].strip())
 
@@ -434,6 +440,8 @@ class PrefLTLf:
             pref_type, l_index, r_index = atomic_pref.split(",")
             l_index = int(l_index.strip())
             r_index = int(r_index.strip())
+            assert pref_type.strip() in [">", ">=", "~", "<>"], \
+                f'{pref_type.strip()} is not a valid. Valid preference operators are {[">", ">=", "~", "<>"]}.'
             assert l_index in phi, f"Index of LTLf formula out of bounds. |Phi|={len(phi)}, l_index={l_index}."
             assert r_index in phi, f"Index of LTLf formula out of bounds. |Phi|={len(phi)}, r_index={l_index}."
 
@@ -444,6 +452,14 @@ class PrefLTLf:
 
             spec_ir.add((pref_type, l_index, r_index))
 
+        # Log constructed representation
+        log_string = [
+            f"{l_index}:{compact_phi[l_index]}  {pref_type}  {r_index}:{compact_phi[r_index]}"
+            for pref_type, l_index, r_index in spec_ir
+        ]
+        logger.debug(f"Intermediate representation based on raw input: {log_string}")
+
+        # Return intermediate representation
         return compact_phi, list(spec_ir)
 
     def _auto_complete(self, phi, spec_ir, auto_complete):
@@ -462,6 +478,14 @@ class PrefLTLf:
             for varphi in phi.keys():
                 spec_ir.append((">=", varphi, new_id))
 
+        # Log constructed representation
+        log_string = [
+            f"{l_index}:{phi[l_index]}  {pref_type}  {r_index}:{phi[r_index]}"
+            for pref_type, l_index, r_index in spec_ir
+        ]
+        logger.debug(f"Intermediate representation based on raw input: {log_string}")
+
+        # Return intermediate representation
         return phi, spec_ir
 
     def _is_lang_complete(self, phi):
@@ -482,8 +506,6 @@ class PrefLTLf:
         :param pref_stmts: List of preference statements of form (op, l_index, r_index).
         :return:
         """
-        logger.debug("Building partial order.")
-
         # Construct P, P', I, J sets
         set_w = set()
         set_p = set()
@@ -504,7 +526,7 @@ class PrefLTLf:
                 set_j.add((varphi1, varphi2))
                 set_j.add((varphi2, varphi1))
 
-        logger.debug(f"Input clauses from raw-spec:\n{set_w=} \n{set_p=} \n{set_i=} \n{set_j=}")
+        logger.debug(f"Clauses from intermediate representation:\n{set_w=} \n{set_p=} \n{set_i=} \n{set_j=}")
 
         # Resolve W into P, I, J
         for varphi1, varphi2 in set_w:
@@ -525,13 +547,11 @@ class PrefLTLf:
             else:
                 set_p.add((varphi1, varphi2))
 
-        logger.debug(f"Resolving W into PIJ model:\n{set_p=} \n{set_i=} \n{set_j=}")
-
         # Transitive closure
         set_p = self._transitive_closure(set_p)
         set_i |= {(varphi, varphi) for varphi in phi}
         set_i = self._transitive_closure(set_i)
-        logger.debug(f"Transitive Closure on P, I:\n{set_p=} \n{set_i=} \n{set_j=}")
+        logger.debug(f"Clauses after applying transitive and reflexive closures:\n{set_p=} \n{set_i=} \n{set_j=}")
 
         # Consistency check
         if any((varphi1, varphi1) in set_p for varphi1 in phi):
@@ -551,8 +571,6 @@ class PrefLTLf:
         if set.intersection(set_i, set_j):
             raise ValueError(f"Inconsistent specification: {set.intersection(set_i, set_j)} common in I and J.")
 
-        logger.debug(f"Model:\n{phi=} \nmodel={set.union(set_p, set_i)}")
-
         # # Merge any specifications with same language.
         # equiv = self._find_equivalent_ltlf(phi)
         # phi, model = self._process_equiv_ltlf(phi, set.union(set_p, set_i), equiv)
@@ -561,7 +579,6 @@ class PrefLTLf:
         # Apply reflexive closure
         model = set.union(set_p, set_i)
         model.update({(i, i) for i in phi.keys()})
-        logger.debug(f"Reflexive closure:\n{model=}")
 
         # Apply transitive closure
         # model = util.transitive_closure(model)
@@ -570,8 +587,9 @@ class PrefLTLf:
 
         # If spec is a preorder, but not a partial order, then construct a partial order. [add option to skip this]
         phi, model = self._pre_to_partial_order(phi, model)
-        logger.debug(f"Preorder to Partial Order:\n{phi=}\n{model=}")
 
+        log_model = {f"({phi[l_index]}, {phi[r_index]})" for l_index, r_index in model}
+        logger.debug(f"Partial order for input specification:\n{phi=}\n{model=}\nmodel={log_model}")
         return phi, model
 
     def _find_equivalent_ltlf(self, phi):
