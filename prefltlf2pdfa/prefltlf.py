@@ -28,13 +28,25 @@ class PrefLTLf:
         self.relation = set()  # Set of triples (PREF_TYPE, LTLf Formula, LTLf Formula) constructed based on given PrefLTLf spec
 
         if not kwargs.get("skip_parse", False):
-            self.parse()
+            self.parse(kwargs.get("auto_complete", "none"))
 
     def __str__(self):
         return pprint.pformat(self.serialize())
 
     def __repr__(self):
         return f"<PrefLTLf Formula at {id(self)}>"
+
+    def __getstate__(self):
+        return self.serialize()
+
+    def __setstate__(self, obj_dict):
+        self.raw_spec = obj_dict["f_str"]
+        self.atoms = set(obj_dict["atoms"])
+        self.alphabet = set(obj_dict["alphabet"]) if obj_dict["alphabet"] is not None else None
+        self.phi = obj_dict["phi"]
+        self.dfa = list()  # List (indexed set) of LTLf formulas appearing in PrefLTLf specification
+        self.relation = set(obj_dict["relation"])
+        self.parse(auto_complete="none")
 
     def serialize(self):
         jsonable_dict = {
@@ -61,7 +73,14 @@ class PrefLTLf:
         with open(fpath, 'r') as f:
             return cls(f.read(), alphabet=alphabet)
 
-    def parse(self):
+    def parse(self, auto_complete="none"):
+        # Check auto_complete inputs
+        if auto_complete not in ["none", "incomparable", "minimal"]:
+            logger.error(
+                f"Unknown auto_complete value '{auto_complete}' to parse function. "
+                f"Accepted values are {['none', 'incomparable', 'minimal']}."
+            )
+
         # Parse header. Ensure that the spec is well-formed and a PrefLTLf formula.
         header = self._parse_header()
         logger.debug(f"{header=}")
@@ -69,10 +88,11 @@ class PrefLTLf:
         # Construct intermediate representation of standard spec
         phi, spec_ir = self._construct_spec_ir()
         if not self._is_lang_complete(phi):
-            raise ValueError(f"The set of conditions phi = {set(phi.values())} is not complete")
-            # logger.warning(f"The set of conditions phi = {set(phi.values())} is not complete")
-        # print(f"{phi=}")
-        # print(f"{spec_ir=}")
+            if auto_complete != "none":
+                phi, spec_ir = self._auto_complete(phi, spec_ir, auto_complete)
+            else:
+                logger.error(f"The set of conditions phi = {set(phi.values())} is not complete")
+                raise ValueError(f"The set of conditions phi = {set(phi.values())} is not complete")
 
         # Else, we have spec in standard format. Build model. (if user has specified ltlf formulas, add them to model)
         phi, model = self._build_partial_order(phi, spec_ir)
@@ -112,6 +132,15 @@ class PrefLTLf:
         # Return preference automaton
         return aut
 
+    def outcomes(self, q):
+        return set(i for i in range(len(q)) if q[i] in self.dfa[i]["final_states"])
+
+    def maximal_outcomes(self, outcomes):
+        # No formula in (sat - f) is preferred to f
+        return {f for f in outcomes if not any((t, f) in self.relation for t in outcomes - {f})}
+
+    # noinspection PyMethodMayBeStatic
+
     def _parse_header(self):
         stmts = (line.strip() for line in self.raw_spec.split("\n"))
         stmts = [line for line in stmts if line and not line.startswith("#")]
@@ -129,6 +158,7 @@ class PrefLTLf:
         return header
 
     # noinspection PyMethodMayBeStatic
+
     def _parse_ltlf(self, raw_spec):
         atoms = set()
         phi = list()
@@ -139,6 +169,7 @@ class PrefLTLf:
         return atoms, phi
 
     # noinspection PyMethodMayBeStatic
+
     def _parse_relation(self, raw_spec):
         relation = set()
         for formula in raw_spec:
@@ -147,7 +178,8 @@ class PrefLTLf:
 
             # Determine operator
             pref_type = rel[0].strip()
-            assert pref_type in [">", ">=", "~", "<>"], f"The formula is ill-formed. Unrecognized operator `{pref_type}`"
+            assert pref_type in [">", ">=", "~",
+                                 "<>"], f"The formula is ill-formed. Unrecognized operator `{pref_type}`"
 
             # Determine formulas
             left = int(rel[1].strip())
@@ -163,8 +195,10 @@ class PrefLTLf:
 
         # First, process the non-incomparability formulas because they add elements to preorder relation.
         for pref_type, phi1, phi2 in (f for f in relation_spec if f[0] != "<>"):
-            assert 0 <= phi1 <= len(self.phi), f"Index of LTLf formula out of bounds. |Phi|={len(self.phi)}, phi_1={phi1}."
-            assert 0 <= phi2 <= len(self.phi), f"Index of LTLf formula out of bounds. |Phi|={len(self.phi)}, phi_2={phi2}."
+            assert 0 <= phi1 <= len(
+                self.phi), f"Index of LTLf formula out of bounds. |Phi|={len(self.phi)}, phi_1={phi1}."
+            assert 0 <= phi2 <= len(
+                self.phi), f"Index of LTLf formula out of bounds. |Phi|={len(self.phi)}, phi_2={phi2}."
 
             if pref_type == ">" or pref_type == ">=":
                 preorder.add((phi1, phi2))
@@ -175,8 +209,10 @@ class PrefLTLf:
 
                 # Second, process the incomparability formulas because it removes elements to preorder relation.
         for pref_type, phi1, phi2 in (f for f in relation_spec if f[0] == "<>"):
-            assert 0 <= phi1 <= len(self.phi), f"Index of LTLf formula out of bounds. |Phi|={len(self.phi)}, phi_1={phi1}."
-            assert 0 <= phi2 <= len(self.phi), f"Index of LTLf formula out of bounds. |Phi|={len(self.phi)}, phi_2={phi2}."
+            assert 0 <= phi1 <= len(
+                self.phi), f"Index of LTLf formula out of bounds. |Phi|={len(self.phi)}, phi_1={phi1}."
+            assert 0 <= phi2 <= len(
+                self.phi), f"Index of LTLf formula out of bounds. |Phi|={len(self.phi)}, phi_2={phi2}."
 
             if (phi1, phi2) in preorder:
                 logger.warning(f"{(phi1, phi2)} is removed from preorder.")
@@ -197,6 +233,7 @@ class PrefLTLf:
         return preorder
 
     # noinspection PyMethodMayBeStatic
+
     def _transitive_closure(self, preorder):
         closure = set(preorder)
         while True:
@@ -318,17 +355,9 @@ class PrefLTLf:
         for u, v in pg.edges():
             aut.add_pref_edge(state2node[u], state2node[v])
 
-    def outcomes(self, q):
-        return set(i for i in range(len(q)) if q[i] in self.dfa[i]["final_states"])
-
     def _vectorize(self, outcomes):
         return tuple(1 if i in outcomes else 0 for i in range(len(self.dfa)))
 
-    def maximal_outcomes(self, outcomes):
-        # No formula in (sat - f) is preferred to f
-        return {f for f in outcomes if not any((t, f) in self.relation for t in outcomes - {f})}
-
-    # noinspection PyMethodMayBeStatic
     def _ltlf2dfa(self, ltlf_formula):
         # Use LTLf2DFA to convert LTLf formula to DFA.
         dot = ltlf_formula.to_dfa()
@@ -417,6 +446,24 @@ class PrefLTLf:
 
         return compact_phi, list(spec_ir)
 
+    def _auto_complete(self, phi, spec_ir, auto_complete):
+        # Determine completion formula
+        completion_formula = " | ".join([f"({varphi})" for varphi in phi.values()])
+        completion_formula = f"!({completion_formula})"
+        completion_formula = PARSER(completion_formula)
+
+        # Add completion formula to phi.
+        new_id = max(phi.keys()) + 1
+        phi.update({new_id: completion_formula})
+
+        # Update spec_ir based on input auto-complete method.
+        #   In case auto-complete type is incomparable, no update to spec_ir is necessary.
+        if auto_complete == "minimal":
+            for varphi in phi.keys():
+                spec_ir.append((">=", varphi, new_id))
+
+        return phi, spec_ir
+
     def _is_lang_complete(self, phi):
         formula = " | ".join([f"({varphi})" for varphi in phi.values()])
         equiv_formula = PARSER(formula)
@@ -462,10 +509,12 @@ class PrefLTLf:
         # Resolve W into P, I, J
         for varphi1, varphi2 in set_w:
             if (varphi1, varphi2) in set_j:
-                raise ValueError(f"Inconsistent specification: {varphi1} >= {varphi2} and {varphi1} <> {varphi2}.")
+                raise ValueError(
+                    f"Inconsistent specification: {phi[varphi1]} >= {phi[varphi2]} and {phi[varphi1]} <> {phi[varphi2]}.")
 
             elif (varphi2, varphi1) in set_p:
-                raise ValueError(f"Inconsistent specification: {varphi1} >= {varphi2} and {varphi2} > {varphi1}.")
+                raise ValueError(
+                    f"Inconsistent specification: {phi[varphi1]} >= {phi[varphi2]} and {phi[varphi2]} > {phi[varphi1]}.")
 
             elif (varphi1, varphi2) in set_p | set_i:
                 pass
@@ -480,6 +529,7 @@ class PrefLTLf:
 
         # Transitive closure
         set_p = self._transitive_closure(set_p)
+        set_i |= {(varphi, varphi) for varphi in phi}
         set_i = self._transitive_closure(set_i)
         logger.debug(f"Transitive Closure on P, I:\n{set_p=} \n{set_i=} \n{set_j=}")
 
@@ -799,8 +849,10 @@ class PrefAutomaton:
         return self.pref_graph.nodes[cls_id]["name"]
 
     def add_pref_edge(self, source_id, target_id):
-        assert self.pref_graph.has_node(source_id), f"Cannot add preference edge. {source_id=} not in preference graph. "
-        assert self.pref_graph.has_node(target_id), f"Cannot add preference edge. {target_id=} not in preference graph. "
+        assert self.pref_graph.has_node(
+            source_id), f"Cannot add preference edge. {source_id=} not in preference graph. "
+        assert self.pref_graph.has_node(
+            target_id), f"Cannot add preference edge. {target_id=} not in preference graph. "
         self.pref_graph.add_edge(source_id, target_id)
 
 
@@ -815,13 +867,13 @@ if __name__ == '__main__':
     # !(F(a) | G(b))
     true U a
 
-    # SPec
+    # Spec
     >, 0, 1
-    >, 0, 2
-    >=, 1, 2
+    >=, 0, 2
+    >=, 2, 1
     """)
 
-    formula = PrefLTLf(spec)
+    formula = PrefLTLf(spec, auto_complete="minimal")
     aut = formula.translate(semantics=semantics_mp_forall_exists)
 
     from pprint import pprint
