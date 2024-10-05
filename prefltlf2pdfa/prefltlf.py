@@ -1,18 +1,36 @@
 import itertools
-
 import lark.exceptions
 import networkx as nx
 import pprint
-import pygraphviz
+import subprocess
 import sympy
 
-from ltlf2dfa.parser.ltlf import LTLfParser
 from loguru import logger
-from networkx.drawing import nx_agraph
+from ltlf2dfa.parser.ltlf import LTLfParser
+from tqdm import tqdm
+
+import prefltlf2pdfa.utils as utils
 from prefltlf2pdfa.semantics import *
 
 # logger.remove()
 PARSER = LTLfParser()
+
+# Check ltlf2dfa is functioning properly and has access to mona.
+command = "mona --help"
+
+# Run the command using subprocess
+try:
+    result = subprocess.run(command, shell=True, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if "Usage: mona [options] <filename>" not in result.stdout:
+        logger.warning("Mona not found on your system. The tool may not translate LTLf to PDFA properly.")
+
+        # Output and return code
+        logger.debug("Return Code:", result.returncode)
+        logger.debug("Output:", result.stdout)
+        logger.debug("Error (if any):", result.stderr)
+
+except Exception as e:
+    print(f"An error occurred: {e}")
 
 
 class PrefLTLf:
