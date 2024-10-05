@@ -2,7 +2,7 @@ import pprint
 import os
 import sys
 
-import jsonpickle as json
+import jsonpickle
 import pickle
 
 from pathlib import Path
@@ -35,13 +35,13 @@ def main():
 
     # JSON formula (write)
     with open(OUT_DIR / "spec0.json", "w") as json_file:
-        out = json.encode(f0.serialize())
+        out = jsonpickle.encode(f0.serialize(), indent=2)
         json_file.write(out)
 
     # JSON formula (read)
     with open(OUT_DIR / "spec0.json", "r") as json_file:
         json_str = json_file.read()
-        f0_json = json.decode(json_str)
+        f0_json = jsonpickle.decode(json_str)
         f0_json = PrefLTLf.deserialize(f0_json)
 
     assert f0_json == f0, f"{f0_json}\n\n{f0}"
