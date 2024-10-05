@@ -46,10 +46,12 @@ class PrefLTLf:
         self.alphabet = list(alphabet) if alphabet is not None else None
         self.phi = dict()  # Dict (indexed set) of LTLf formulas appearing in PrefLTLf specification
         self.relation = set()  # Set of triples (PREF_TYPE, LTLf, LTLf) constructed based on given PrefLTLf spec
-        self.dfa = list()  # List (indexed set) of LTLf formulas appearing in PrefLTLf specification
+        # self.dfa = list()  # List (indexed set) of LTLf formulas appearing in PrefLTLf specification
 
         if not kwargs.get("skip_parse", False):
-            self.parse(kwargs.get("auto_complete", "none"))
+            self.parse(
+                auto_complete=kwargs.get("auto_complete", "none"),
+            )
 
     def __eq__(self, other):
         keys = ["f_str", "atoms", "alphabet", "phi", "relation"]
@@ -59,7 +61,7 @@ class PrefLTLf:
         return False
 
     def __hash__(self):
-        return hash()
+        return hash(tuple(sorted(self.relation)))
 
     def __str__(self):
         return pprint.pformat(self.serialize())
@@ -75,7 +77,7 @@ class PrefLTLf:
         self.atoms = set(obj_dict["atoms"])
         self.alphabet = set(obj_dict["alphabet"]) if obj_dict["alphabet"] is not None else None
         self.phi = obj_dict["phi"]
-        self.dfa = obj_dict["dfa"]
+        # self.dfa = obj_dict["dfa"]
         self.relation = set(obj_dict["relation"])
         self.parse(auto_complete="none")
 
@@ -86,7 +88,7 @@ class PrefLTLf:
             "alphabet": [list(symbol) for symbol in self.alphabet] if self.alphabet is not None else None,
             "phi": {k: str(v) for k, v in self.phi.items()},
             "relation": list(self.relation),
-            "dfa": self.dfa
+            # "dfa": self.dfa
         }
         return jsonable_dict
 
@@ -97,7 +99,7 @@ class PrefLTLf:
         formula.alphabet = set(obj_dict["alphabet"]) if obj_dict["alphabet"] is not None else None
         formula.phi = {int(k): PARSER(v) for k, v in obj_dict["phi"].items()}
         formula.relation = set(obj_dict["relation"])
-        formula.dfa = obj_dict["dfa"]
+        # formula.dfa = obj_dict["dfa"]
         return formula
 
     @classmethod
@@ -155,28 +157,27 @@ class PrefLTLf:
         aut = PrefAutomaton()
         aut.atoms = self.atoms
         aut.alphabet = self.alphabet
+        aut.phi = self.phi
 
         # Translate LTLf formulas in self.phi to DFAs
-        self.dfa = [self._ltlf2dfa(self.phi[i]) for i in sorted(self.phi.keys())]
-        assert len(self.dfa) >= 2, f"PrefLTLf spec must have at least two LTLf formulas."
-        # for dfa in self.dfa:
-        #     logger.info(f"dfa={dfa}")
+        sorted_phi = sorted(self.phi.keys())
+        aut.dfa = [utils.ltlf2dfa(self.phi[i]) for i in sorted_phi]
+        assert len(aut.dfa) >= 2, f"PrefLTLf spec must have at least two LTLf formulas."
+
+        # Log all DFAs
+        log_message = f"Constructed Automata: {self.phi} \n"
+        for i in range(len(sorted_phi)):
+            log_message += f"\n======== {self.phi[sorted_phi[i]]} ========\n{pprint.pformat(aut.dfa[i])}\n"
+        logger.debug(log_message)
 
         # Compute union product of DFAs
-        self._construct_underlying_graph(aut)
+        self._construct_semi_automaton(aut, show_progress=show_progress)
 
         # Construct preference graph
-        self._construct_preference_graph(aut, semantics)
+        self._construct_preference_graph(aut, semantics, show_progress=show_progress)
 
         # Return preference automaton
         return aut
-
-    def outcomes(self, q):
-        return set(i for i in range(len(q)) if q[i] in self.dfa[i]["final_states"])
-
-    def maximal_outcomes(self, outcomes):
-        # No formula in (sat - f) is preferred to f
-        return {f for f in outcomes if not any((t, f) in self.relation for t in outcomes - {f})}
 
     # noinspection PyMethodMayBeStatic
 
@@ -283,8 +284,8 @@ class PrefLTLf:
             closure = closure_until_now
         return closure
 
-    def _construct_underlying_graph(self, aut):
-        dfa = self.dfa
+    def _construct_semi_automaton(self, aut, show_progress=False):
+        dfa = aut.dfa
 
         # Initial state
         q0 = tuple([dfa['init_state'] for dfa in dfa])
@@ -394,49 +395,6 @@ class PrefLTLf:
         for u, v in pg.edges():
             aut.add_pref_edge(state2node[u], state2node[v])
 
-    def _vectorize(self, outcomes):
-        return tuple(1 if i in outcomes else 0 for i in range(len(self.dfa)))
-
-    def _ltlf2dfa(self, ltlf_formula):
-        # Use LTLf2DFA to convert LTLf formula to DFA.
-        dot = ltlf_formula.to_dfa()
-        # logger.info(f"{ltlf_formula=}, dot={dot}")
-
-        # Convert dot to networkx MultiDiGraph.
-        dot_graph = nx_agraph.from_agraph(pygraphviz.AGraph(dot))
-        # logger.info(f"{ltlf_formula=}, dot={dot_graph}")
-
-        # Construct DFA dictionary using networkx MultiDiGraph.
-        dfa = dict()
-        dfa["states"] = set()
-        dfa["transitions"] = dict()
-        dfa["init_state"] = set()
-        dfa["final_states"] = set()
-
-        # Add states to DFA
-        for u, d in dot_graph.nodes(data=True):
-            if u == "init":
-                continue
-
-            u = int(float(u))
-            dfa["states"].add(u)
-            dfa["transitions"][u] = dict()
-            if d.get('shape', None) == 'doublecircle':
-                dfa["final_states"].add(u)
-
-        for u, v, d in dot_graph.edges(data=True):
-            if u == "init":
-                dfa["init_state"] = int(v)
-                continue
-
-            u = int(float(u))
-            v = int(float(v))
-
-            dfa["transitions"][u][d['label']] = v
-
-        # logger.info(f"ltlf_formula={ltlf_formula}, dfa={dfa}")
-        return dfa
-
     def _construct_spec_ir(self):
         """
         Construct intermediate representation of PrefLTLf specification.
@@ -530,10 +488,11 @@ class PrefLTLf:
         # Return intermediate representation
         return phi, spec_ir
 
+    # noinspection PyMethodMayBeStatic
     def _is_lang_complete(self, phi):
         formula = " | ".join([f"({varphi})" for varphi in phi.values()])
         equiv_formula = PARSER(formula)
-        dfa = self._ltlf2dfa(equiv_formula)
+        dfa = utils.ltlf2dfa(equiv_formula)
 
         # Check for universally true DFA
         if len(dfa["states"]) == 1 and len(dfa["final_states"]) == 1:
@@ -662,7 +621,7 @@ class PrefLTLf:
 
                 # Equivalence formula
                 equiv_formula = PARSER(f"{phi[indices[i]]} <-> {phi[indices[j]]}")
-                dfa = self._ltlf2dfa(equiv_formula)
+                dfa = utils.ltlf2dfa(equiv_formula)
 
                 # Check for universally true DFA
                 if len(dfa["states"]) == 1 and len(dfa["final_states"]) == 1:
@@ -806,6 +765,8 @@ class PrefAutomaton:
         self.transitions = dict()
         self.init_state = None
         self.pref_graph = nx.MultiDiGraph()
+        self.phi = dict()
+        self.dfa = list()
 
         # Helper attributes
         self._num_states = 0
