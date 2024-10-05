@@ -30,6 +30,16 @@ class PrefLTLf:
         if not kwargs.get("skip_parse", False):
             self.parse(kwargs.get("auto_complete", "none"))
 
+    def __eq__(self, other):
+        keys = ["f_str", "atoms", "alphabet", "phi", "relation"]
+        if isinstance(other, PrefLTLf):
+            return ({k: v for k, v in self.serialize().items() if k in keys} ==
+                    {k: v for k, v in other.serialize().items() if k in keys})
+        return False
+
+    def __hash__(self):
+        return hash()
+
     def __str__(self):
         return pprint.pformat(self.serialize())
 
