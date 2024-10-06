@@ -54,6 +54,5 @@ RUN pip3 install dd
 RUN pip3 install  ltlf2dfa
 
 # Install prefltlf2pdfa
-RUN apt update
 RUN git clone https://github.com/abhibp1993/prefltlf2pdfa.git
 RUN cd prefltlf2pdfa && python3 setup.py install
