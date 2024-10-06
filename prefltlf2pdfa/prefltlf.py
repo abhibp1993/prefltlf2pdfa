@@ -1081,8 +1081,8 @@ class PrefAutomaton:
             state_dict = {k: {"name": v, "partition": None} for k, v in self.states.items()}
             for partition_label, data in self.pref_graph.nodes(data=True):
                 for state in data["partition"]:
-                    sid = state2node[state]
-                    state_dict[sid]["partition"] = partition_label
+                    # sid = state2node[state]
+                    state_dict[state]["partition"] = partition_label
 
             return state_dict.items()
 
