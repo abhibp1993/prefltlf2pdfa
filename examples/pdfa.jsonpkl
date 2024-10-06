@@ -1,0 +1,179 @@
+{
+  "input": {
+    "spec": "prefltlf 2\n\n# Formulas\nF a\nG b\n#!(F(a) | G(b))\n\n# Specification\n>, 0, 1\n#>, 0, 2\n#>=, 1, 2",
+    "alphabet": null,
+    "options": {
+      "show_sa_state": false,
+      "show_class": false,
+      "show_color": false,
+      "show_pg_state": false
+    },
+    "semantics": "semantics_mp_ae",
+    "autocomplete": "minimal"
+  },
+  "formula": {
+    "f_str": "prefltlf 2\n\n# Formulas\nF a\nG b\n#!(F(a) | G(b))\n\n# Specification\n>, 0, 1\n#>, 0, 2\n#>=, 1, 2",
+    "atoms": [
+      "a",
+      "b"
+    ],
+    "alphabet": [],
+    "phi": {
+      "0": "F(a)",
+      "1": "G(b)",
+      "2": "!((F(a) | G(b)))"
+    },
+    "relation": [
+      {
+        "py/tuple": [
+          0,
+          1
+        ]
+      },
+      {
+        "py/tuple": [
+          1,
+          2
+        ]
+      },
+      {
+        "py/tuple": [
+          0,
+          0
+        ]
+      },
+      {
+        "py/tuple": [
+          1,
+          1
+        ]
+      },
+      {
+        "py/tuple": [
+          0,
+          2
+        ]
+      },
+      {
+        "py/tuple": [
+          2,
+          2
+        ]
+      }
+    ]
+  },
+  "pdfa": {
+    "states": {
+      "0": {
+        "name": {
+          "py/tuple": [
+            1,
+            1,
+            1
+          ]
+        },
+        "partition": 1
+      },
+      "1": {
+        "name": {
+          "py/tuple": [
+            1,
+            2,
+            2
+          ]
+        },
+        "partition": 2
+      },
+      "2": {
+        "name": {
+          "py/tuple": [
+            2,
+            2,
+            3
+          ]
+        },
+        "partition": 0
+      },
+      "3": {
+        "name": {
+          "py/tuple": [
+            2,
+            1,
+            3
+          ]
+        },
+        "partition": 0
+      }
+    },
+    "atoms": {
+      "py/set": [
+        "a",
+        "b"
+      ]
+    },
+    "alphabet": [],
+    "transitions": {
+      "0": {
+        "a & !b": 2,
+        "a & b": 3,
+        "!a & !b": 1,
+        "b & !a": 0
+      },
+      "1": {
+        "!a": 1,
+        "a": 2
+      },
+      "2": {
+        "true": 2
+      },
+      "3": {
+        "!b": 2,
+        "b": 3
+      }
+    },
+    "init_state": 0,
+    "pref_graph": {
+      "nodes": {
+        "0": {
+          "name": "F(a)",
+          "partition": {
+            "py/set": [
+              2,
+              3
+            ]
+          }
+        },
+        "1": {
+          "name": "G(b)",
+          "partition": {
+            "py/set": [
+              0
+            ]
+          }
+        },
+        "2": {
+          "name": "!((F(a) | G(b)))",
+          "partition": {
+            "py/set": [
+              1
+            ]
+          }
+        }
+      },
+      "edges": {
+        "0": [
+          0
+        ],
+        "1": [
+          0,
+          1
+        ],
+        "2": [
+          0,
+          1,
+          2
+        ]
+      }
+    }
+  }
+}

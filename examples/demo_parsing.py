@@ -44,13 +44,13 @@ def main():
 
     # Inconsistent specification
     try:
-        f4 = PrefLTLf.from_file(SPECS_DIR / "spec4.prefltlf", auto_complete="minimal")
+        f4 = PrefLTLf.from_file(SPECS_DIR / "erroneous" / "spec4.prefltlf", auto_complete="minimal")
     except ValueError as err:
         print(err)
 
     # LTLf parsing error
     try:
-        f5 = PrefLTLf.from_file(SPECS_DIR / "spec5.prefltlf", auto_complete="minimal")
+        f5 = PrefLTLf.from_file(SPECS_DIR / "erroneous" / "spec5.prefltlf", auto_complete="minimal")
     except ValueError as err:
         logger.success("Specification successfully raised ValueError.")
 
