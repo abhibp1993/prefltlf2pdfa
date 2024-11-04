@@ -14,7 +14,7 @@ Functions:
 import prefltlf2pdfa.utils as utils
 
 
-def semantics_forall_exists(preorder, source, target):
+def semantics_forall_exists(phi, preorder, source, target):
     """
     Check if for all formulas in the source set, there exists a formula
     in the target set that satisfies the given preorder.
@@ -27,8 +27,8 @@ def semantics_forall_exists(preorder, source, target):
     Returns:
         bool: True if the semantic condition is satisfied, False otherwise.
     """
-    sat_source = {i for i in range(len(source)) if source[i] == 1}
-    sat_target = {i for i in range(len(target)) if target[i] == 1}
+    sat_source = {phi[i] for i in range(len(source)) if source[i] == 1}
+    sat_target = {phi[i] for i in range(len(target)) if target[i] == 1}
 
     # Force empty set to be indifferent to each other. Required for preference graph to be preorder.
     if sat_source == sat_target == set():
@@ -45,7 +45,7 @@ def semantics_forall_exists(preorder, source, target):
     return True
 
 
-def semantics_exists_forall(preorder, source, target):
+def semantics_exists_forall(phi, preorder, source, target):
     """
     Check if there exists a formula in the source set such that all formulas
     in the target set satisfy the given preorder.
@@ -58,8 +58,8 @@ def semantics_exists_forall(preorder, source, target):
     Returns:
         bool: True if the semantic condition is satisfied, False otherwise.
     """
-    sat_source = {i for i in range(len(source)) if source[i] == 1}
-    sat_target = {i for i in range(len(target)) if target[i] == 1}
+    sat_source = {phi[i] for i in range(len(source)) if source[i] == 1}
+    sat_target = {phi[i] for i in range(len(target)) if target[i] == 1}
 
     # Force empty set to be indifferent to each other. Required for preference graph to be preorder.
     if sat_source == sat_target == set():
@@ -75,7 +75,7 @@ def semantics_exists_forall(preorder, source, target):
     return True
 
 
-def semantics_forall_forall(preorder, source, target):
+def semantics_forall_forall(phi, preorder, source, target):
     """
     Check if all formulas in the source set satisfy the preorder for all
     formulas in the target set.
@@ -88,8 +88,8 @@ def semantics_forall_forall(preorder, source, target):
     Returns:
         bool: True if the semantic condition is satisfied, False otherwise.
     """
-    sat_source = {i for i in range(len(source)) if source[i] == 1}
-    sat_target = {i for i in range(len(target)) if target[i] == 1}
+    sat_source = {phi[i] for i in range(len(source)) if source[i] == 1}
+    sat_target = {phi[i] for i in range(len(target)) if target[i] == 1}
 
     # Force empty set to be indifferent to each other. Required for preference graph to be preorder.
     if sat_source == sat_target:
@@ -105,7 +105,7 @@ def semantics_forall_forall(preorder, source, target):
     return True
 
 
-def semantics_mp_forall_exists(preorder, source, target):
+def semantics_mp_forall_exists(phi, preorder, source, target):
     """
     Check if for all maximal outcomes in the source set, there exists a maximal outcome
     in the target set that satisfies the given preorder.
@@ -128,10 +128,10 @@ def semantics_mp_forall_exists(preorder, source, target):
     """
     # PATCH: the input to this function is assumed to contain only maximal elements.
     #   (see _construct_preference_graph function in prefltlf.py)
-    return semantics_forall_exists(preorder, source, target)
+    return semantics_forall_exists(phi, preorder, source, target)
 
 
-def semantics_mp_exists_forall(preorder, source, target):
+def semantics_mp_exists_forall(phi, preorder, source, target):
     """
     Check if there exists a maximal outcome in the source set such that all maximal
     outcomes in the target set satisfy the given preorder.
@@ -154,10 +154,10 @@ def semantics_mp_exists_forall(preorder, source, target):
     """
     # PATCH: the input to this function is assumed to contain only maximal elements.
     #   (see _construct_preference_graph function in prefltlf.py)
-    return semantics_exists_forall(preorder, source, target)
+    return semantics_exists_forall(phi, preorder, source, target)
 
 
-def semantics_mp_forall_forall(preorder, source, target):
+def semantics_mp_forall_forall(phi, preorder, source, target):
     """
     Check if all maximal outcomes in the source set satisfy the preorder
     for all maximal outcomes in the target set.
@@ -180,4 +180,4 @@ def semantics_mp_forall_forall(preorder, source, target):
     """
     # PATCH: the input to this function is assumed to contain only maximal elements.
     #   (see _construct_preference_graph function in prefltlf.py)
-    return semantics_forall_forall(preorder, source, target)
+    return semantics_forall_forall(phi, preorder, source, target)

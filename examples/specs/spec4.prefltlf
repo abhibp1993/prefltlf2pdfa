@@ -1,0 +1,12 @@
+prefltlf 4
+
+# Formulas
+F(G(b)) & !F(G(a))
+F(G(b)) & F(G(a))
+!F(G(b)) & !F(G(a))
+!F(G(b)) & F(G(a))
+
+# Specification
+>, 0,2
+~, 0,1
+~, 2,3

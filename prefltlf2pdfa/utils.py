@@ -43,8 +43,8 @@ def ltlf2dfa(ltlf_formula):
     return dfa
 
 
-def outcomes(dfa, q):
-    return set(i for i in range(len(q)) if q[i] in dfa[i]["final_states"])
+def outcomes(phi, dfa, q):
+    return set(phi[i] for i in range(len(q)) if q[i] in dfa[i]["final_states"])
 
 
 def maximal_outcomes(relation, outcomes):
@@ -52,5 +52,5 @@ def maximal_outcomes(relation, outcomes):
     return {f for f in outcomes if not any((t, f) in relation for t in outcomes - {f})}
 
 
-def vectorize(dfa, outcomes):
-    return tuple(1 if i in outcomes else 0 for i in range(len(dfa)))
+def vectorize(phi, dfa, outcomes):
+    return tuple(1 if phi[i] in outcomes else 0 for i in range(len(dfa)))

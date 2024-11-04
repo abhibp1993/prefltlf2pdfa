@@ -296,14 +296,14 @@ class PrefLTLf:
         aut.phi = self.phi
 
         # Translate LTLf formulas in self.phi to DFAs
-        sorted_phi = sorted(self.phi.keys())
-        aut.dfa = [utils.ltlf2dfa(self.phi[i]) for i in sorted_phi]
+        aut.sorted_phi = sorted(self.phi.keys())
+        aut.dfa = [utils.ltlf2dfa(self.phi[i]) for i in aut.sorted_phi]
         assert len(aut.dfa) >= 2, f"PrefLTLf spec must have at least two LTLf formulas."
 
         # Log all DFAs
         log_message = f"Constructed Automata: {self.phi} \n"
-        for i in range(len(sorted_phi)):
-            log_message += f"\n======== {self.phi[sorted_phi[i]]} ========\n{pprint.pformat(aut.dfa[i])}\n"
+        for i in range(len(aut.sorted_phi)):
+            log_message += f"\n======== {self.phi[aut.sorted_phi[i]]} ========\n{pprint.pformat(aut.dfa[i])}\n"
         logger.debug(log_message)
 
         # Compute union product of DFAs
@@ -555,11 +555,11 @@ class PrefLTLf:
                 disable=not show_progress
         ):
             q = data["name"]
-            outcomes = utils.outcomes(aut.dfa, q)
+            outcomes = utils.outcomes(aut.sorted_phi, aut.dfa, q)
             if semantics in PrefLTLf.MAXIMAL_SEMANTICS:
                 outcomes = utils.maximal_outcomes(self.relation, outcomes)
 
-            cls = utils.vectorize(aut.dfa, outcomes)
+            cls = utils.vectorize(aut.sorted_phi, aut.dfa, outcomes)
             # cls_id = aut.add_class(cls)
 
             # Add node to temporary graph
@@ -580,7 +580,7 @@ class PrefLTLf:
         ):
             # source = aut.get_class_name(source_id)
             # target = aut.get_class_name(target_id)
-            if semantics(self.relation, source, target):
+            if semantics(aut.sorted_phi, self.relation, source, target):
                 # aut.add_pref_edge(source_id, target_id)
                 pg.add_edge(source, target)
 
@@ -596,6 +596,8 @@ class PrefLTLf:
                 cls_name.append(
                     " & ".join([str(phi[i]) for i in range(len(phi)) if cls[i] == 1])
                 )
+
+            # Determine class name and add class to aut
             cls_name = " | ".join((f"({x})" for x in cls_name))
             cls_name = str(PARSER(cls_name))
             cls_id = aut.add_class(cls_name)
@@ -958,8 +960,9 @@ class PrefAutomaton:
         self.transitions = dict()
         self.init_state = None
         self.pref_graph = nx.MultiDiGraph()
-        self.phi = dict()
-        self.dfa = list()
+        self.phi = dict()                           # Map {formula-id: formula-str}
+        self.sorted_phi = list()                    # Ordered list of formulas
+        self.dfa = list()                           # Ordered list of DFAs corresponding to sorted_formulas
 
         # Helper attributes
         self._num_states = 0
