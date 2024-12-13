@@ -1,0 +1,13 @@
+prefltlf 5
+# Formulae
+F(d1)
+F(d2)
+!(F(d1) | F(d2)) & F(G(p0))
+!(F(d1) | F(d2)) & F(G(p1))
+!(F(d1) | F(d2)) & !(F(G(p0)) | F(G(p1)))
+# Specification
+~, 3,0
+>, 3,1
+>, 0,1
+>, 0,2
+>, 1,2

@@ -139,7 +139,7 @@ class PrefLTLf:
     def __setstate__(self, obj_dict):
         self.raw_spec = obj_dict["f_str"]
         self.atoms = set(obj_dict["atoms"])
-        self.alphabet = set(obj_dict["alphabet"]) if obj_dict["alphabet"] is not None else None
+        self.alphabet = [set(p) for p in obj_dict["alphabet"]] if obj_dict["alphabet"] is not None else None
         self.phi = obj_dict["phi"]
         # self.dfa = obj_dict["dfa"]
         self.relation = set(obj_dict["relation"])
@@ -181,7 +181,7 @@ class PrefLTLf:
         """
         formula = cls(spec=obj_dict["f_str"], skip_parse=True)
         formula.atoms = set(obj_dict["atoms"])
-        formula.alphabet = set(obj_dict["alphabet"]) if obj_dict["alphabet"] is not None else None
+        formula.alphabet = [set(p) for p in obj_dict["alphabet"]] if obj_dict["alphabet"] is not None else None
         formula.phi = {int(k): PARSER(v) for k, v in obj_dict["phi"].items()}
         formula.relation = set(obj_dict["relation"])
         # formula.dfa = obj_dict["dfa"]
@@ -960,9 +960,9 @@ class PrefAutomaton:
         self.transitions = dict()
         self.init_state = None
         self.pref_graph = nx.MultiDiGraph()
-        self.phi = dict()                           # Map {formula-id: formula-str}
-        self.sorted_phi = list()                    # Ordered list of formulas
-        self.dfa = list()                           # Ordered list of DFAs corresponding to sorted_formulas
+        self.phi = dict()  # Map {formula-id: formula-str}
+        self.sorted_phi = list()  # Ordered list of formulas
+        self.dfa = list()  # Ordered list of DFAs corresponding to sorted_formulas
 
         # Helper attributes
         self._num_states = 0
