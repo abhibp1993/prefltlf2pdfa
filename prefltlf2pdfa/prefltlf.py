@@ -13,15 +13,23 @@ validating and manipulating preference automata.
 """
 
 import itertools
+import os
+
+import math
+
 import lark.exceptions
 import networkx as nx
 import pprint
 import subprocess
 import sympy
+# from sympy import sympify, symbols
+from jinja2.idtracking import symbols_for_node
 
 from loguru import logger
 from ltlf2dfa.parser.ltlf import LTLfParser
+from sympy.abc import alpha
 from tqdm import tqdm
+from concurrent.futures import ProcessPoolExecutor
 
 import prefltlf2pdfa.utils as utils
 from prefltlf2pdfa.semantics import *
@@ -307,7 +315,8 @@ class PrefLTLf:
         logger.debug(log_message)
 
         # Compute union product of DFAs
-        self._construct_semi_automaton(aut, show_progress=show_progress)
+        # self._construct_semi_automaton(aut, show_progress=show_progress)
+        self._construct_semi_automaton_parallel(aut, show_progress=show_progress)
 
         # Construct preference graph
         self._construct_preference_graph(aut, semantics, show_progress=show_progress)
@@ -514,6 +523,103 @@ class PrefLTLf:
                         continue
 
                         # Otherwise, add transition
+                    cond = (str(cond).replace("~", "!").
+                            replace("True", "true").
+                            replace("False", "false"))
+
+                    q_next = tuple([dfa[i]['transitions'][q[i]][condition_on_edges[i]] for i in range(len(dfa))])
+                    if q_next not in explored:
+                        queue.append(q_next)
+
+                        # Add transition to preference automaton
+                    transitions.add((q, q_next, cond))
+
+                # Update tqdm progress bar
+                pbar.update(1)
+                pbar.total = len(queue) + pbar.n
+                pbar.refresh()
+
+        for q, p, cond in transitions:
+            aut.add_transition(q, p, cond)
+
+    def _construct_semi_automaton_parallel(self, aut, show_progress=False):
+        """
+        Constructs a semi-automaton from a set of DFA states and transitions.
+
+        :param aut: A PrefAutomaton object where the semi-automaton will be stored.
+        :type aut: PrefAutomaton
+        :param show_progress: Whether to display a progress bar for the construction.
+        :type show_progress: bool
+        :return: None
+        """
+        # Get all DFAs
+        dfa = aut.dfa
+
+        # Compute all states
+        states = list(itertools.product(*(d["states"] for d in dfa)))
+        for state in states:
+            aut.add_state(state)
+
+        # Initial state
+        q0 = tuple([dfa['init_state'] for dfa in dfa])
+        aut.init_state = aut.add_state(q0)
+
+        # TODO: Set up parallel processing here for edges.
+        #   1. Alphabet size
+        #   2. Value of |Product of Outdegree(s_i)|, given s = (s_1, s_2, ..., s_n).
+        #   If alphabet size is small, then fix a symbol and evaluate edge within individual DFA
+        #   Else, enumerate (s, e_1, ..., e_n) tuples and run a parallel processing loop.
+        # TODO: Provide an option to force a certain behavior.
+
+        # Estimate alphabet size
+        alphabet_size = 2 ** len(self.atoms) if not self.alphabet else len(self.alphabet)
+        edge_set_size = math.prod(len(d["transitions"]) for d in dfa)
+
+        # Initialize transitions
+        if alphabet_size < edge_set_size:
+            transitions = self._construct_sa_edges_given_alphabet(aut, states, show_progress=False)
+        else:
+            transitions = self._construct_sa_edges_given_edge_set(aut, states, show_progress=False)
+
+        print(f"{alphabet_size=}, {edge_set_size=}")
+        exit(0)
+
+        # Visit reachable states
+        queue = [q0]
+        explored = set()
+        transitions = set()
+        with tqdm(total=len(queue), desc="Constructing semi-automaton", disable=not show_progress) as pbar:
+            while queue:
+                # Visit next state
+                q = queue.pop()
+                explored.add(q)
+
+                # Add state to preference automaton
+                aut.add_state(q)
+
+                # Add transitions to product dfa
+                # Pick one outgoing edge from each of the sub-DFA states in q.
+                for condition_on_edges in itertools.product(
+                        *[dfa[i]['transitions'][q[i]].keys() for i in range(len(dfa))]
+                ):
+                    # Define condition for synchronous transition of selected edges (AND-ing of all conditions)
+                    cond = sympy.sympify(("(" + ") & (".join(condition_on_edges) + ")").replace("!", "~")).simplify()
+
+                    # If alphabet is provided, require that at least one symbol enables the condition.
+                    if (
+                            self.alphabet and
+                            all(
+                                not cond.subs({atom: True if atom in true_atoms else False for atom in self.atoms})
+                                for true_atoms in self.alphabet
+                            )
+                    ):
+                        continue
+
+                    # If label is false, then the synchronous transition is not valid.
+                    if cond == sympy.false:
+                        continue
+
+                    # Otherwise, add transition
                     cond = (str(cond).replace("~", "!").
                             replace("True", "true").
                             replace("False", "false"))
@@ -949,6 +1055,52 @@ class PrefLTLf:
 
         # Return
         return phi, partial_order
+
+    def _construct_sa_edges_given_alphabet(self, aut, states, show_progress=False):
+        # Construct alphabet x states
+        alphabet = self.alphabet if self.alphabet else utils.powerset(self.atoms)
+        alphabet_states = list(itertools.product(alphabet, states))
+
+        # TODO. deserialization has problem! Most likely mona is inaccessible when deserializing.
+        # TODO. Investigate why the speed is so slow.
+        #   Try spot instead of sympy. Might be faster. 
+
+        # Set up concurrent.futures multiprocessing
+        # cpu_count = os.cpu_count()
+        # with ProcessPoolExecutor(max_workers=cpu_count) as executor:
+        #     transitions = set(executor.map(self._helper, alphabet_states))
+        transitions = self._helper(alphabet_states, aut)
+
+    def _helper(self, pairs, aut):
+        transitions = set()
+        for symbol, state in tqdm(pairs):
+            # Construct substitution map
+            subs_map = {atom: True if atom in symbol else False for atom in self.atoms}
+
+            # Get edge corresponding to component dfa states that evaluates to true under alphabet
+            n_state = tuple()
+            condition_on_edges = []
+            for i in range(len(state)):
+                trans_i = aut.dfa[i]["transitions"][state[i]]
+                for cond, n_state_i in trans_i.items():
+                    cond = sympy.sympify(cond.replace("!", "~"))   #.simplify()
+                    if cond.subs(subs_map) == sympy.true:
+                        n_state += (n_state_i,)
+                        condition_on_edges.append(str(cond))
+                        break
+
+            # Ensure next state is appropriately constructed
+            assert len(n_state) == len(state), "Problem during next state construction."
+
+            # Construct condition on transition
+            cond = sympy.sympify(("(" + ") & (".join(condition_on_edges) + ")").replace("!", "~")).simplify()
+            cond = (str(cond).replace("~", "!").
+                    replace("True", "true").
+                    replace("False", "false"))
+            # print(cond)
+            transitions.add((state, n_state, cond))
+
+        return transitions
 
 
 class PrefAutomaton:

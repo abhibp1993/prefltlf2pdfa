@@ -1,4 +1,5 @@
 from networkx.drawing import nx_agraph
+from itertools import chain, combinations
 import pygraphviz
 
 
@@ -54,3 +55,13 @@ def maximal_outcomes(relation, outcomes):
 
 def vectorize(phi, dfa, outcomes):
     return tuple(1 if phi[i] in outcomes else 0 for i in range(len(dfa)))
+
+
+def powerset(iterable):
+    s = list(iterable)
+    assert len(s) < 20, "Too many elements to compute powerset. Limit set to 20."
+    return list(map(set, chain.from_iterable(combinations(s, r) for r in range(len(s) + 1))))
+
+
+if __name__ == '__main__':
+    print(powerset([1, 2, 3]))
