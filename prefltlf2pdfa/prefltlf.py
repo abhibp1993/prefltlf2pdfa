@@ -691,7 +691,8 @@ class PrefLTLf:
                         # cond = "(" + ") & (".join(conditions) + ")"
                         assert len(next_q) == len(q), \
                             f"Problem constructing next state. Probably, some DFA is incomplete."
-                        cond = " & ".join(true_atoms) + " & ".join(f"!{p}" for p in self.atoms - true_atoms)
+                        # cond = " & ".join(true_atoms) + " & ".join(f"!{p}" for p in self.atoms - true_atoms)
+                        cond = " & ".join([f'{p}' for p in true_atoms] + [f"!{p}" for p in self.atoms - true_atoms])
                         transitions.add((q, next_q, cond))
                         semi_aut.add_edge(q, next_q, key=cond)
 
@@ -758,10 +759,16 @@ class PrefLTLf:
             helper_map[i][q][tuple(sorted(true_atoms))] = p
 
         # Create transitions
-        for q in semi_aut.nodes():
+        for q in tqdm(
+                semi_aut.nodes(),
+                desc="Constructing semi-automaton transitions",
+                disable=not show_progress
+        ):
             for true_atoms in alphabet:
                 p = tuple(helper_map[i][q[i]][tuple(sorted(true_atoms))] for i in range(len(dfa)))
-                cond = " & ".join(true_atoms) + " & ".join(f"!{p}" for p in self.atoms - true_atoms)
+                # cond = " & ".join(true_atoms) + " & ".join(f"!{p}" for p in self.atoms - true_atoms)
+                cond = " & ".join([f'{p}' for p in true_atoms] + [f"!{p}" for p in self.atoms - true_atoms])
+                # print(true_atoms, self.atoms, cond)
                 semi_aut.add_edge(q, p, key=cond)
 
         # # =========================================================

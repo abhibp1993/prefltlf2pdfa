@@ -39,17 +39,10 @@ def main():
             {"p0"},
             {"p1"},
             {"p2"},
-            {"p3"},
-            {"p4"},
-            {"p5"},
-            {"p6"},
-            {"p7"},
-            {"p8"},
-            {"p9"},
-            # {"d10"},
         ]
     )
-    aut0 = f0.translate(show_progress=True)
+    # aut0 = f0.translate(show_progress=True, enumeration="auto")
+    aut0 = f0.translate(show_progress=True, enumeration="none")
 
     # See documentation for option description.
     sa, pg = paut2dot(aut0, show_sa_state=True, show_class=True, show_color=True, show_pg_state=True)
