@@ -326,7 +326,12 @@ class PrefLTLf:
 
         # Compute union product of DFAs
         # self._construct_semi_automaton(aut, show_progress=show_progress)
-        self._construct_semi_automaton(aut, show_progress=show_progress, enumeration="none", backend="sympy")
+        self._construct_semi_automaton(
+            aut,
+            show_progress=show_progress,
+            enumeration="edge-enumeration",
+            backend="auto"
+        )
 
         # Construct preference graph
         self._construct_preference_graph(aut, semantics, show_progress=show_progress)
@@ -534,14 +539,37 @@ class PrefLTLf:
             logger.info(
                 f"Semi-automaton construction: User enforced, {approach=}."
             )
-        else:
-            num_trans = [len(trans) for d in aut.dfa for _, trans in d["transitions"].items()]
-            alphabet_enum_size = len(self.alphabet) if not self.alphabet else (2 ** len(self.atoms)) * sum(num_trans)
-            edge_enum_size = math.prod(num_trans)
-            approach = "alphabet-enumeration" if alphabet_enum_size <= edge_enum_size else "edge-enumeration"
+        elif enumeration == "alphabet-enumeration":
+            approach = "alphabet-enumeration"
             logger.info(
-                f"Semi-automaton construction: {alphabet_enum_size=}, {edge_enum_size=}, determined {approach=}."
+                f"Semi-automaton construction: User enforced, {approach=}."
             )
+        elif enumeration == "edge-enumeration":
+            if self.alphabet:
+                approach = "alphabet-enumeration"
+                logger.error(
+                    f"Since {self.alphabet=} is given, `edge-enumeration` cannot be used.\n"
+                    f"Semi-automaton construction: Defaulting to {approach=}."
+                )
+            else:
+                approach = "edge-enumeration"
+                logger.info(
+                    f"Semi-automaton construction: User enforced, {approach=}."
+                )
+        else:  # enumeration == "auto":
+            if self.alphabet:
+                approach = "alphabet-enumeration"
+                logger.error(
+                    f"Semi-automaton construction: Since {self.alphabet=} is given, defaulting to {approach=}."
+                )
+            else:
+                num_trans = [len(trans) for d in aut.dfa for _, trans in d["transitions"].items()]
+                alphabet_enum_size = len(self.alphabet) if not self.alphabet else (2 ** len(self.atoms)) * sum(num_trans)
+                edge_enum_size = math.prod(num_trans)
+                approach = "alphabet-enumeration" if alphabet_enum_size <= edge_enum_size else "edge-enumeration"
+                logger.info(
+                    f"Semi-automaton construction: {alphabet_enum_size=}, {edge_enum_size=}, determined {approach=}."
+                )
 
         # Define a semi-automaton as networkx graph
         semi_aut = nx.MultiDiGraph()
@@ -553,18 +581,25 @@ class PrefLTLf:
 
         if approach != "no-enumeration":
             states = itertools.product(*(d["states"] for d in aut.dfa))
+            semi_aut.add_nodes_from(states)
 
         # Invoke appropriate transition constructor
         if approach == "no-enumeration":
             semi_aut = self._construct_sa_no_enum(semi_aut, aut.dfa, backend, show_progress=False)
         elif approach == "alphabet-enumeration":
-            semi_aut = self._construct_sa_alphabet_enum()
+            semi_aut = self._construct_sa_alphabet_enum(
+                semi_aut,
+                aut.dfa,
+                cpu_count,
+                backend,
+                show_progress=False
+            )
         else:  # approach == "edge-enumeration":
-            semi_aut = self._construct_sa_edge_enum()
+            semi_aut = self._construct_sa_edge_enum(semi_aut, aut.dfa, show_progress=False)
 
         # Prune semi-automaton, depending on selected approach.
         if approach != "no-enumeration":
-            bfs_edges = list(nx.bfs_edges(semi_aut, source=init_state))
+            bfs_edges = list(nx.edge_bfs(semi_aut, source=init_state))
             pruned_semi_aut = nx.edge_subgraph(semi_aut, bfs_edges)
         else:
             pruned_semi_aut = semi_aut
@@ -648,6 +683,83 @@ class PrefLTLf:
                 pbar.update(1)
                 pbar.total = len(queue) + pbar.n
                 pbar.refresh()
+
+        return semi_aut
+
+    def _construct_sa_alphabet_enum(self, semi_aut, dfa, cpu_count, backend, show_progress=False):
+        # Setup backend for PL formula processing
+        eval_func = spot_eval if backend == "spot" else sympy_eval
+
+        # Construct tuples for evaluation: (i, q[i], conditions[q[i]], true_atoms)
+        args = []
+        for i in range(len(dfa)):
+            for q in dfa[i]["states"]:
+                args.append((i, q, dfa[i]["transitions"][q]))
+        alphabet = self.alphabet if self.alphabet else utils.powerset(self.atoms)
+        args = list(itertools.product(args, alphabet))
+        args = [inp + (eval_func, self.atoms) for inp in args]
+
+        # Process all states and alphabet combinations; each element is `next_q`
+        result = list(pqdm(args, _worker_alphabet_enum, n_jobs=cpu_count, disable=not show_progress))
+
+        # Create map: {i: {q: {<true_atoms: tuple>: p}}}
+        helper_map = {
+            i: {
+                q: {
+                    tuple(true_atoms): None for true_atoms in alphabet
+                }
+                for q in dfa[i]["states"]
+            }
+            for i in range(len(dfa))
+        }
+
+        for idx in range(len(args)):
+            (i, q, trans_q), true_atoms, _, _ = args[idx]
+            p = result[idx]
+            helper_map[i][q][tuple(sorted(true_atoms))] = p
+
+        # Create transitions
+        for q in semi_aut.nodes():
+            for true_atoms in alphabet:
+                p = tuple(helper_map[i][q[i]][tuple(sorted(true_atoms))] for i in range(len(dfa)))
+                cond = " & ".join(true_atoms) + " & ".join(f"!{p}" for p in self.atoms - true_atoms)
+                semi_aut.add_edge(q, p, key=cond)
+
+        # # =========================================================
+        # state_alphabet = list(itertools.product(semi_aut.nodes(), alphabet))
+        # args = (inp + (eval_func, dfa) for inp in state_alphabet)
+        # next_states = list(pqdm(args, self._worker_alphabet_enum, n_jobs=cpu_count, disable=not show_progress))
+        # for i in range(len(state_alphabet)):
+        #     true_atoms = state_alphabet[i][1]
+        #     cond = " & ".join(true_atoms) + " & ".join(f"!{p}" for p in self.atoms - true_atoms)
+        #     semi_aut.add_edge(state_alphabet[i][0], next_states[i], key=cond)
+
+        return semi_aut
+
+    def _construct_sa_edge_enum(self, semi_aut, dfa, show_progress=False):
+        raise ValueError("Alphabet needs to be accounted for.")
+        # Construct set of candidate transitions
+        transitions = list()
+        for state in semi_aut.nodes():
+            component_trans = list()
+            for i in range(len(dfa)):
+                # dfa = dfa[i]
+                trans = dfa[i]["transitions"][state[i]]
+                component_trans.append([(state[i], v, a) for a, v in trans.items()])
+            transitions += list(itertools.product(*component_trans))
+
+        # Set up concurrent.futures multiprocessing
+        cpu_count = os.cpu_count()
+        transitions = pqdm(transitions, check_plformula, n_jobs=cpu_count, disable=not show_progress)
+
+        # Construct transitions of product semi-automaton
+        for trans in transitions:
+            components, cond, is_valid = trans
+            if not is_valid:
+                continue
+            src_state = tuple(components[i][0] for i in range(len(components)))
+            tgt_state = tuple(components[i][1] for i in range(len(components)))
+            semi_aut.add_edge(src_state, tgt_state, cond)
 
         return semi_aut
 
@@ -1579,3 +1691,10 @@ def spot_simplify(cond):
 
 def sympy_simplify(cond):
     return sympy.logic.boolalg.simplify_logic(cond.replace("!", "~"))
+
+
+def _worker_alphabet_enum(args):
+    (i, q, trans_dict), true_atoms, eval_func, atoms = args
+    for cond, p in trans_dict.items():
+        if eval_func(cond, true_atoms, atoms):
+            return p
