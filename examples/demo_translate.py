@@ -27,7 +27,7 @@ def main():
             {"d4"},
             {"d5"},
             {"d6"},
-            # {"d7"},
+            {"d7"},
         ]
     )
     aut0 = f0.translate(show_progress=True)

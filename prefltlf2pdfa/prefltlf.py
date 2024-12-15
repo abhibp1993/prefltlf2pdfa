@@ -12,8 +12,19 @@ validating and manipulating preference automata.
     but the remaining functions work okay.
 """
 
+try:
+    import spot
+except ImportError:
+    spot = None
+
+try:
+    import sympy
+except ImportError:
+    sympy = None
+
 import itertools
 import os
+import sys
 
 import math
 
@@ -21,15 +32,14 @@ import lark.exceptions
 import networkx as nx
 import pprint
 import subprocess
-import sympy
-# from sympy import sympify, symbols
 from jinja2.idtracking import symbols_for_node
 
 from loguru import logger
 from ltlf2dfa.parser.ltlf import LTLfParser
-from sympy.abc import alpha
+# from sympy.abc import alpha
 from tqdm import tqdm
 from concurrent.futures import ProcessPoolExecutor
+from pqdm.processes import pqdm
 
 import prefltlf2pdfa.utils as utils
 from prefltlf2pdfa.semantics import *
@@ -316,7 +326,7 @@ class PrefLTLf:
 
         # Compute union product of DFAs
         # self._construct_semi_automaton(aut, show_progress=show_progress)
-        self._construct_semi_automaton_parallel(aut, show_progress=show_progress)
+        self._construct_semi_automaton(aut, show_progress=show_progress, enumeration="none", backend="sympy")
 
         # Construct preference graph
         self._construct_preference_graph(aut, semantics, show_progress=show_progress)
@@ -471,7 +481,177 @@ class PrefLTLf:
             closure = closure_until_now
         return closure
 
-    def _construct_semi_automaton(self, aut, show_progress=False):
+    def _construct_semi_automaton(
+            self,
+            aut,
+            show_progress=False,
+            use_multiprocessing=True,
+            backend="auto",
+            enumeration="auto"
+    ):
+        """
+        Constructs a semi-automaton from a set of DFA states and transitions.
+
+        :param aut: A PrefAutomaton object where the semi-automaton will be stored.
+        :type aut: PrefAutomaton
+        :param show_progress: Whether to display a progress bar for the construction. Default: `False`
+        :type show_progress: bool
+        :param backend: Whether to use spot or sympy backend for PL formula operations. Default: `auto`.
+        :type show_progress: ["auto", "spot", "sympy"]
+        :param use_multiprocessing: Whether to use multiprocessing for constructing edges. Default: `True`.
+        :type backend: bool
+        :return: None
+        """
+        # Options processing
+        # 1. If backend is auto, determine which backend to use. Otherwise, check if selected backend is available.
+        assert backend in ["auto", "spot", "sympy"], \
+            (f"Unsupported backend for semi-automaton transition processing. "
+             f"Expected ['auto', 'spot', 'sympy'], received '{backend}'.")
+
+        if backend == "auto":
+            if "spot" in sys.modules:
+                backend = "spot"
+            else:  # "sympy" in sys.modules:
+                backend = "sympy"
+            logger.info(f"Semi-automaton construction: {backend=}.")
+
+        # 2. Determine use of parallelism and corresponding parameters
+        if use_multiprocessing is True:
+            cpu_count = os.cpu_count()
+            logger.info(f"Semi-automaton construction: {use_multiprocessing=}, {cpu_count=}.")
+
+        # 3. Determine which approach to use: alphabet-enumeration or edge-enumeration or no-enumeration?
+        # Note: The bottleneck is evaluating a PL formula labeling DFA transitions.
+        #   We implement a code optimization based on the following observation.
+        #   The upper-bound on number of edges is the smaller quantity between
+        #   a) |alphabet| * SUM_i(E_i), since from each state there is exactly one edge enabled for a given symbol.
+        #   b) |E_1| * ... * |E_n|: Given a state in semi-automaton, all combinations of out-edges in component DFA.
+        #   In each case, the method for evaluating validity of edge combintion is different.
+        #   We will use the approach that requires less computation.
+        # When user has specified enumeration = "none", we will disregard above optimization.
+        if enumeration == "none":
+            approach = "no-enumeration"
+            logger.info(
+                f"Semi-automaton construction: User enforced, {approach=}."
+            )
+        else:
+            num_trans = [len(trans) for d in aut.dfa for _, trans in d["transitions"].items()]
+            alphabet_enum_size = len(self.alphabet) if not self.alphabet else (2 ** len(self.atoms)) * sum(num_trans)
+            edge_enum_size = math.prod(num_trans)
+            approach = "alphabet-enumeration" if alphabet_enum_size <= edge_enum_size else "edge-enumeration"
+            logger.info(
+                f"Semi-automaton construction: {alphabet_enum_size=}, {edge_enum_size=}, determined {approach=}."
+            )
+
+        # Define a semi-automaton as networkx graph
+        semi_aut = nx.MultiDiGraph()
+
+        # Define state set or initial state, depending on selected approach.
+        init_state = tuple([dfa['init_state'] for dfa in aut.dfa])
+        semi_aut.add_node(init_state)
+        semi_aut.graph["init_state"] = init_state
+
+        if approach != "no-enumeration":
+            states = itertools.product(*(d["states"] for d in aut.dfa))
+
+        # Invoke appropriate transition constructor
+        if approach == "no-enumeration":
+            semi_aut = self._construct_sa_no_enum(semi_aut, aut.dfa, backend, show_progress=False)
+        elif approach == "alphabet-enumeration":
+            semi_aut = self._construct_sa_alphabet_enum()
+        else:  # approach == "edge-enumeration":
+            semi_aut = self._construct_sa_edge_enum()
+
+        # Prune semi-automaton, depending on selected approach.
+        if approach != "no-enumeration":
+            bfs_edges = list(nx.bfs_edges(semi_aut, source=init_state))
+            pruned_semi_aut = nx.edge_subgraph(semi_aut, bfs_edges)
+        else:
+            pruned_semi_aut = semi_aut
+
+        # Update `aut` data structure.
+        for node in pruned_semi_aut.nodes():
+            aut.add_state(node)
+        for u, v, cond in pruned_semi_aut.edges(keys=True):
+            aut.add_transition(u, v, cond)
+
+    def _construct_sa_no_enum(self, semi_aut, dfa, backend, show_progress=False):
+        # Get initial state
+        q0 = semi_aut.graph["init_state"]
+
+        # Setup backend for PL formula processing
+        eval_func = spot_eval if backend == "spot" else sympy_eval
+        simplify_func = spot_simplify if backend == "spot" else sympy_simplify
+
+        # Visit reachable states
+        queue = [q0]
+        explored = set()
+        transitions = set()
+        with (tqdm(total=len(queue), desc="Constructing semi-automaton", disable=not show_progress) as pbar):
+            while queue:
+                # Visit next state
+                q = queue.pop()
+                explored.add(q)
+
+                # Add state to preference automaton
+                if not semi_aut.has_node(q):
+                    semi_aut.add_node(q)
+
+                # If alphabet is specified, expand `q` using alphabet.
+                if self.alphabet:
+                    # For each symbol in alphabet
+                    for true_atoms in self.alphabet:
+                        # Evaluate all component DFA edges from q[i] under this symbol.
+                        next_q = tuple()
+                        conditions = []
+                        for i in range(len(q)):
+                            trans_qi = dfa[i]['transitions'][q[i]]
+
+                            for cond, v in trans_qi.items():
+                                if eval_func(cond, true_atoms, self.atoms):
+                                    next_q += (v,)
+                                    conditions.append(cond)
+                                    break
+
+                        # Determine (unique) next state under the symbol and add transition.
+                        # cond = "(" + ") & (".join(conditions) + ")"
+                        assert len(next_q) == len(q), \
+                            f"Problem constructing next state. Probably, some DFA is incomplete."
+                        cond = " & ".join(true_atoms) + " & ".join(f"!{p}" for p in self.atoms - true_atoms)
+                        transitions.add((q, next_q, cond))
+                        semi_aut.add_edge(q, next_q, key=cond)
+
+                        # Manage queue
+                        if next_q not in explored:
+                            queue.append(next_q)
+
+                else:  # not self.alphabet
+                    # Construct set of all candidate transitions
+                    transitions_from_qi = [dfa[i]['transitions'][q[i]] for i in range(len(dfa))]
+
+                    # Evaluate each one for non-trivial condition.
+                    for trans_bunch in itertools.product(*transitions_from_qi):
+                        conditions = [trans_i["cond"] for trans_i in trans_bunch]
+                        cond = "(" + ") & (".join(conditions) + ")"
+                        cond = simplify_func(cond)
+                        if cond is not False:
+                            # Construct next state representation
+                            next_q = tuple(trans_i["p"] for trans_i in trans_bunch)
+                            transitions.add((q, next_q, cond))
+                            semi_aut.add_edge(q, next_q, key=cond)
+
+                            # Manage queue
+                            if next_q not in explored:
+                                queue.append(next_q)
+
+                # Update tqdm progress bar
+                pbar.update(1)
+                pbar.total = len(queue) + pbar.n
+                pbar.refresh()
+
+        return semi_aut
+
+    def _construct_semi_automaton_2(self, aut, show_progress=False):
         """
         Constructs a semi-automaton from a set of DFA states and transitions.
 
@@ -542,7 +722,7 @@ class PrefLTLf:
         for q, p, cond in transitions:
             aut.add_transition(q, p, cond)
 
-    def _construct_semi_automaton_parallel(self, aut, show_progress=False):
+    def _construct_semi_automaton_3(self, aut, show_progress=False):
         """
         Constructs a semi-automaton from a set of DFA states and transitions.
 
@@ -572,16 +752,58 @@ class PrefLTLf:
         # TODO: Provide an option to force a certain behavior.
 
         # Estimate alphabet size
+        num_trans_in_dfas = [len(trans) for d in dfa for _, trans in d["transitions"].items()]
         alphabet_size = 2 ** len(self.atoms) if not self.alphabet else len(self.alphabet)
-        edge_set_size = math.prod(len(d["transitions"]) for d in dfa)
+        alphabet_size = alphabet_size * sum(num_trans_in_dfas)
+        edge_set_size = math.prod(num_trans_in_dfas)
+        print(f"{alphabet_size=}, {edge_set_size=}")
 
         # Initialize transitions
         if alphabet_size < edge_set_size:
-            transitions = self._construct_sa_edges_given_alphabet(aut, states, show_progress=False)
-        else:
-            transitions = self._construct_sa_edges_given_edge_set(aut, states, show_progress=False)
+            # For each alphabet, for each DFA, create a state-enabled_transition mapping.
+            #   Create a list of (dfa-index, transition, symbol).
+            #   Evaluate in parallel which transitions are enabled under the given symbol.
+            #   Construct a map: [{symbol: {state: transition}}] for each DFA.
 
-        print(f"{alphabet_size=}, {edge_set_size=}")
+            transitions = list()
+            for i in range(len(aut.dfa)):
+                dfa = aut.dfa[i]
+                transitions += [(i, (u, v, a)) for u, trans in dfa["transitions"].items() for a, v in trans.items()]
+            alphabet = self.alphabet if self.alphabet else utils.powerset(self.atoms)
+            transitions = list(itertools.product(transitions, alphabet))
+
+            # Set up concurrent.futures multiprocessing
+            cpu_count = os.cpu_count()
+            args = ((trans, self.atoms, symbol) for trans, symbol in transitions)
+            transitions = pqdm(args, eval_plformula, n_jobs=cpu_count)
+
+            # TODO. Reconstruct transitions
+            pprint.pprint(transitions)
+
+        else:
+            # Construct set of candidate transitions
+            transitions = list()
+            for state in states:
+                component_trans = list()
+                for i in range(len(aut.dfa)):
+                    dfa = aut.dfa[i]
+                    trans = dfa["transitions"][state[i]]
+                    component_trans.append([(state[i], v, a) for a, v in trans.items()])
+                transitions += list(itertools.product(*component_trans))
+
+            # Set up concurrent.futures multiprocessing
+            cpu_count = os.cpu_count()
+            transitions = pqdm(transitions, check_plformula, n_jobs=cpu_count)
+
+            # Construct transitions of product semi-automaton
+            for trans in transitions:
+                components, cond, is_valid = trans
+                if not is_valid:
+                    continue
+                src_state = tuple(components[i][0] for i in range(len(components)))
+                tgt_state = tuple(components[i][1] for i in range(len(components)))
+                aut.add_transition(src_state, tgt_state, cond)
+            pprint.pprint(aut.transitions)
         exit(0)
 
         # Visit reachable states
@@ -1083,7 +1305,7 @@ class PrefLTLf:
             for i in range(len(state)):
                 trans_i = aut.dfa[i]["transitions"][state[i]]
                 for cond, n_state_i in trans_i.items():
-                    cond = sympy.sympify(cond.replace("!", "~"))   #.simplify()
+                    cond = sympy.sympify(cond.replace("!", "~"))  # .simplify()
                     if cond.subs(subs_map) == sympy.true:
                         n_state += (n_state_i,)
                         condition_on_edges.append(str(cond))
@@ -1272,3 +1494,88 @@ class PrefAutomaton:
         assert self.pref_graph.has_node(
             target_id), f"Cannot add preference edge. {target_id=} not in preference graph. "
         self.pref_graph.add_edge(source_id, target_id)
+
+
+def eval_plformula(args):
+    transition, atoms, true_atoms = args
+    cond = transition[-1][-1]
+    subs_map = {
+        atom: True if atom in true_atoms else False
+        for atom in atoms
+    }
+
+    if "spot" in sys.modules:
+        # Define a transform to apply to AST of spot.formula.
+        def transform(node: spot.formula):
+            if node.is_literal():
+                if "!" not in node.to_str():
+                    if node.to_str() in subs_map.keys():
+                        return spot.formula.tt()
+                    else:
+                        return spot.formula.ff()
+
+            return node.map(transform)
+
+        # Apply the transform and return the result.
+        # Since every literal is replaced by true or false,
+        #   the transformed formula is guaranteed to be either true or false.
+        cond = spot.formula(cond)
+        truth_value = True if transform(cond).is_tt() else False
+
+    else:
+        cond = sympy.sympify(cond.replace("!", "~"))  # .simplify()
+        if cond.subs(subs_map) == sympy.true:
+            truth_value = True
+        else:
+            truth_value = False
+
+    return (transition, atoms, true_atoms), truth_value
+
+
+def check_plformula(transition):
+    cond = [component_trans[-1] for component_trans in transition]
+    # cond = [c.replace("~", "!").replace("True", "true").replace("False", "false") for c in cond]
+    cond = "(" + ") & (".join(cond) + ")"
+
+    if "spot" in sys.modules:
+        cond = spot.formula(cond).simplify()
+        is_valid = True if not cond.is_ff() else False
+
+    else:
+        cond = sympy.logic.boolalg.simplify_logic(cond)
+        is_valid = sympy.logic.boolalg.simplify_logic(cond) != sympy.false
+
+    return transition, str(cond), is_valid
+
+
+def spot_eval(cond, true_atoms, atoms):
+    # Define a transform to apply to AST of spot.formula.
+    def transform(node: spot.formula):
+        if node.is_literal():
+            if "!" not in node.to_str():
+                if node.to_str() in true_atoms:
+                    return spot.formula.tt()
+                else:
+                    return spot.formula.ff()
+
+        return node.map(transform)
+
+    f = spot.formula(cond)
+    return spot.are_equivalent(transform(f), spot.formula_tt())
+
+
+def sympy_eval(cond, true_atoms, atoms):
+    subs_map = {
+        atom: True if atom in true_atoms else False
+        for atom in atoms
+    }
+    cond = sympy.sympify(cond.replace("!", "~"))
+    return cond.subs(subs_map) == sympy.true
+
+
+def spot_simplify(cond):
+    return spot.formula(cond).simplify()
+
+
+def sympy_simplify(cond):
+    return sympy.logic.boolalg.simplify_logic(cond.replace("!", "~"))
