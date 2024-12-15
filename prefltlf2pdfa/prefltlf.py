@@ -286,7 +286,7 @@ class PrefLTLf:
 
         return phi, model, atoms
 
-    def translate(self, semantics=semantics_mp_forall_exists, show_progress=False):
+    def translate(self, semantics=semantics_mp_forall_exists, **kwargs):
         """
         Translates the PrefLTLf formula into a preference automaton under the given semantics.
 
@@ -295,8 +295,18 @@ class PrefLTLf:
         semantics : function, optional
             The semantics function to use for translation (default is `semantics_mp_forall_exists`).
 
-        show_progress : bool, optional
+        show_progress : bool, optional (kwargs)
             Whether to show progress during translation (default is False).
+
+        use_multiprocessing : bool, optional (kwargs)
+            Whether to use multiprocessing for constructing transitions (default is True).
+
+        backend : str, optional (kwargs)
+            The backend to use for PL formula operations (default is "auto"). Options are "auto", "spot", or "sympy".
+
+        enumeration : str, optional (kwargs)
+            The approach to use for constructing semi-automaton transitions (default is "auto").
+            Options are "auto", "none", "alphabet-enumeration", or "edge-enumeration".
 
         Returns
         -------
@@ -325,16 +335,16 @@ class PrefLTLf:
         logger.debug(log_message)
 
         # Compute union product of DFAs
-        # self._construct_semi_automaton(aut, show_progress=show_progress)
         self._construct_semi_automaton(
-            aut,
-            show_progress=show_progress,
-            enumeration="edge-enumeration",
-            backend="auto"
+            aut=aut,
+            show_progress=kwargs.get("show_progress", False),
+            use_multiprocessing=kwargs.get("use_multiprocessing", True),
+            backend=kwargs.get("backend", "auto"),
+            enumeration=kwargs.get("enumeration", "auto")
         )
 
         # Construct preference graph
-        self._construct_preference_graph(aut, semantics, show_progress=show_progress)
+        self._construct_preference_graph(aut, semantics, show_progress=kwargs.get("show_progress", False))
 
         # Return preference automaton
         return aut
@@ -505,25 +515,39 @@ class PrefLTLf:
         :type show_progress: ["auto", "spot", "sympy"]
         :param use_multiprocessing: Whether to use multiprocessing for constructing edges. Default: `True`.
         :type backend: bool
-        :return: None
+        :param enumeration: Approach to use for constructing semi-automaton transitions. Default: `auto`.
+            - "edge-enumeration" iterates over all combination of candidate edges from each component DFA states
+                of a given semi-automaton state.
+            - "alphabet-enumeration" identifies enabled edge from each component DFA states of a given
+                semi-automaton state under that symbol and composes them to determine next semi-automaton state.
+            - "none" option constructs semi-automaton in BFS-fashion.
+            - Edge enumeration works when alphabet is NOT provided.
+            - Alphabet enumeration is generally faster.
+            - `auto` option determines the best approach for a given instance. [Recommended]
+        :type enumeration: ["auto", "none", "alphabet-enumeration", "edge-enumeration"].
+        :return: Updated semi-automaton (input PrefAutomaton instance) constructed from the given set of DFAs.
         """
         # Options processing
         # 1. If backend is auto, determine which backend to use. Otherwise, check if selected backend is available.
         assert backend in ["auto", "spot", "sympy"], \
             (f"Unsupported backend for semi-automaton transition processing. "
-             f"Expected ['auto', 'spot', 'sympy'], received '{backend}'.")
+             f"Expected ['auto', 'spot', 'sympy'], received '{backend=}'.")
 
+        # Assume. Either spot or sympy backend is imported at the top of file.
         if backend == "auto":
             if "spot" in sys.modules:
                 backend = "spot"
             else:  # "sympy" in sys.modules:
                 backend = "sympy"
-            logger.info(f"Semi-automaton construction: {backend=}.")
+            logger.debug(f"Semi-automaton construction: {backend=}.")
 
         # 2. Determine use of parallelism and corresponding parameters
         if use_multiprocessing is True:
             cpu_count = os.cpu_count()
-            logger.info(f"Semi-automaton construction: {use_multiprocessing=}, {cpu_count=}.")
+            logger.debug(f"Semi-automaton construction: {use_multiprocessing=}, {cpu_count=}.")
+        else:
+            cpu_count = 1
+            logger.debug(f"Semi-automaton construction: use_multiprocessing=False, cpu_count=1.")
 
         # 3. Determine which approach to use: alphabet-enumeration or edge-enumeration or no-enumeration?
         # Note: The bottleneck is evaluating a PL formula labeling DFA transitions.
@@ -534,6 +558,12 @@ class PrefLTLf:
         #   In each case, the method for evaluating validity of edge combintion is different.
         #   We will use the approach that requires less computation.
         # When user has specified enumeration = "none", we will disregard above optimization.
+        assert enumeration in ["auto", "none", "alphabet-enumeration", "edge-enumeration"], \
+            "Unsupported approach for semi-automaton transition construction. " \
+            "Expected ['auto', 'none', 'alphabet-enumeration', 'edge-enumeration']." \
+            f"Received '{enumeration=}'."
+
+        # Define approach (to be validated in next block)
         if enumeration == "none":
             approach = "no-enumeration"
             logger.info(
@@ -541,35 +571,30 @@ class PrefLTLf:
             )
         elif enumeration == "alphabet-enumeration":
             approach = "alphabet-enumeration"
-            logger.info(
-                f"Semi-automaton construction: User enforced, {approach=}."
-            )
-        elif enumeration == "edge-enumeration":
+        else:  # enumeration == "edge-enumeration" or enumeration == "auto":
+            approach = "edge-enumeration" if not self.alphabet else "alphabet-enumeration"
+
+        # Validate approach
+        if approach == "edge-enumeration":
             if self.alphabet:
                 approach = "alphabet-enumeration"
                 logger.error(
-                    f"Since {self.alphabet=} is given, `edge-enumeration` cannot be used.\n"
+                    f"Since alphabet is given, `edge-enumeration` cannot be used.\n"
                     f"Semi-automaton construction: Defaulting to {approach=}."
                 )
             else:
-                approach = "edge-enumeration"
-                logger.info(
-                    f"Semi-automaton construction: User enforced, {approach=}."
-                )
-        else:  # enumeration == "auto":
-            if self.alphabet:
-                approach = "alphabet-enumeration"
-                logger.error(
-                    f"Semi-automaton construction: Since {self.alphabet=} is given, defaulting to {approach=}."
+                logger.debug(f"Semi-automaton construction: Determined {approach=}.")
+
+        if approach == "alphabet-enumeration":
+            if (self.alphabet and len(self.alphabet) > 2 ** 20) or (not self.alphabet and len(self.atoms) > 20):
+                raise ValueError(
+                    "None of existing approaches for semi-automaton construction works. "
+                    "Edge enumeration cannot be used since alphabet is provided. "
+                    "Alphabet enumeration cannot be used since alphabet is large (>2**20). "
+                    "Recommendation: Try `none` option for enumeration. Beware! It might take long time. "
                 )
             else:
-                num_trans = [len(trans) for d in aut.dfa for _, trans in d["transitions"].items()]
-                alphabet_enum_size = len(self.alphabet) if not self.alphabet else (2 ** len(self.atoms)) * sum(num_trans)
-                edge_enum_size = math.prod(num_trans)
-                approach = "alphabet-enumeration" if alphabet_enum_size <= edge_enum_size else "edge-enumeration"
-                logger.info(
-                    f"Semi-automaton construction: {alphabet_enum_size=}, {edge_enum_size=}, determined {approach=}."
-                )
+                logger.debug(f"Semi-automaton construction: Determined {approach=}.")
 
         # Define a semi-automaton as networkx graph
         semi_aut = nx.MultiDiGraph()
@@ -579,13 +604,15 @@ class PrefLTLf:
         semi_aut.add_node(init_state)
         semi_aut.graph["init_state"] = init_state
 
+        # If approach is either "alphabet-enumeration" or "edge-enumeration", add all states to semi-automaton.
         if approach != "no-enumeration":
             states = itertools.product(*(d["states"] for d in aut.dfa))
             semi_aut.add_nodes_from(states)
 
-        # Invoke appropriate transition constructor
+        # Construct semi-automaton transitions.
         if approach == "no-enumeration":
             semi_aut = self._construct_sa_no_enum(semi_aut, aut.dfa, backend, show_progress=False)
+
         elif approach == "alphabet-enumeration":
             semi_aut = self._construct_sa_alphabet_enum(
                 semi_aut,
@@ -594,8 +621,15 @@ class PrefLTLf:
                 backend,
                 show_progress=False
             )
+
         else:  # approach == "edge-enumeration":
-            semi_aut = self._construct_sa_edge_enum(semi_aut, aut.dfa, show_progress=False)
+            semi_aut = self._construct_sa_edge_enum(
+                semi_aut,
+                aut.dfa,
+                cpu_count,
+                backend,
+                show_progress=False
+            )
 
         # Prune semi-automaton, depending on selected approach.
         if approach != "no-enumeration":
@@ -609,6 +643,11 @@ class PrefLTLf:
             aut.add_state(node)
         for u, v, cond in pruned_semi_aut.edges(keys=True):
             aut.add_transition(u, v, cond)
+        q0 = pruned_semi_aut.graph["init_state"]
+        aut.init_state = aut.add_state(q0)
+
+        # Return updated automaton
+        return aut
 
     def _construct_sa_no_enum(self, semi_aut, dfa, backend, show_progress=False):
         # Get initial state
@@ -736,7 +775,7 @@ class PrefLTLf:
 
         return semi_aut
 
-    def _construct_sa_edge_enum(self, semi_aut, dfa, show_progress=False):
+    def _construct_sa_edge_enum(self, semi_aut, dfa, cpu_count, backend, show_progress=False):
         raise ValueError("Alphabet needs to be accounted for.")
         # Construct set of candidate transitions
         transitions = list()
