@@ -93,3 +93,67 @@ end preferences
 """
         spec = parse_spec(src)
         assert spec.formulas["f0"] == "G safe"
+
+
+class TestPreferenceOperators:
+    def _spec_with_prefs(self, pref_line: str) -> Spec:
+        return parse_spec(f"""
+ltlf-formulas
+  f0: G p
+  f1: F q
+end ltlf-formulas
+
+preferences
+  {pref_line}
+end preferences
+""")
+
+    def test_strict_preference(self):
+        spec = self._spec_with_prefs("f0 > f1")
+        assert len(spec.preferences) == 1
+        assert spec.preferences[0].op == ">"
+        assert spec.preferences[0].lhs == "f0"
+        assert spec.preferences[0].rhs == "f1"
+
+    def test_weak_preference(self):
+        spec = self._spec_with_prefs("f0 >= f1")
+        assert spec.preferences[0].op == ">="
+
+    def test_indifferent(self):
+        spec = self._spec_with_prefs("f0 ~ f1")
+        assert spec.preferences[0].op == "~"
+
+    def test_incomparable(self):
+        spec = self._spec_with_prefs("f0 <> f1")
+        assert spec.preferences[0].op == "<>"
+
+    def test_reverse_strict_normalized(self):
+        # f0 < f1  →  PrefStmt(lhs="f1", op=">", rhs="f0")
+        spec = self._spec_with_prefs("f0 < f1")
+        p = spec.preferences[0]
+        assert p.op == ">"
+        assert p.lhs == "f1"
+        assert p.rhs == "f0"
+
+    def test_reverse_weak_normalized(self):
+        spec = self._spec_with_prefs("f0 <= f1")
+        p = spec.preferences[0]
+        assert p.op == ">="
+        assert p.lhs == "f1"
+        assert p.rhs == "f0"
+
+    def test_multiple_preference_statements(self):
+        src = """
+ltlf-formulas
+  f0: G p
+  f1: F q
+  f2: true
+end ltlf-formulas
+
+preferences
+  f0 > f1
+  f1 >= f2
+end preferences
+"""
+        spec = parse_spec(src)
+        assert len(spec.preferences) == 2
