@@ -394,7 +394,10 @@ preferences
 end preferences
 
 alphabet
-  {}; {p}; {q}; {p, q}
+  {}
+  {p}
+  {q}
+  {p, q}
 end alphabet
 """
         t = self._make_transpiler(src)
@@ -458,6 +461,296 @@ alphabet
 end alphabet
 """
         with pytest.raises(DSLError, match="undeclared"):
+            self._make_transpiler(src)
+
+    def test_powerset_subset(self):
+        """powerset([p]) with props p, q → only subsets of {p}: [{}, {p}]"""
+        src = """
+propositions
+  p, q
+end propositions
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+preferences
+  f0 >= f0
+end preferences
+alphabet
+  powerset([p])
+end alphabet
+"""
+        t = self._make_transpiler(src)
+        assert len(t._alphabet) == 2
+        assert set() in t._alphabet
+        assert {"p"} in t._alphabet
+        assert {"q"} not in t._alphabet
+
+    def test_singletons_default(self):
+        """singletons() with props p, q → [{p}, {q}]"""
+        src = """
+propositions
+  p, q
+end propositions
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+preferences
+  f0 >= f0
+end preferences
+alphabet
+  singletons()
+end alphabet
+"""
+        t = self._make_transpiler(src)
+        assert len(t._alphabet) == 2
+        assert {"p"} in t._alphabet
+        assert {"q"} in t._alphabet
+        assert set() not in t._alphabet
+
+    def test_singletons_subset(self):
+        """singletons([p]) with props p, q → [{p}] only"""
+        src = """
+propositions
+  p, q
+end propositions
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+preferences
+  f0 >= f0
+end preferences
+alphabet
+  singletons([p])
+end alphabet
+"""
+        t = self._make_transpiler(src)
+        assert len(t._alphabet) == 1
+        assert {"p"} in t._alphabet
+
+    def test_emptyset_keyword(self):
+        """emptyset → [set()]"""
+        src = """
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+preferences
+  f0 >= f0
+end preferences
+alphabet
+  emptyset
+end alphabet
+"""
+        t = self._make_transpiler(src)
+        assert t._alphabet == [set()]
+
+    def test_mixed_generators(self):
+        """singletons() + emptyset with props p, q → [{}, {p}, {q}] (deduped)"""
+        src = """
+propositions
+  p, q
+end propositions
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+preferences
+  f0 >= f0
+end preferences
+alphabet
+  singletons()
+  emptyset
+  singletons()
+end alphabet
+"""
+        t = self._make_transpiler(src)
+        assert len(t._alphabet) == 3
+        assert set() in t._alphabet
+        assert {"p"} in t._alphabet
+        assert {"q"} in t._alphabet
+
+    def test_exclude_exact_set(self):
+        """powerset(p,q) then exclude {p,q} → 3 sets remain"""
+        src = """
+propositions
+  p, q
+end propositions
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+preferences
+  f0 >= f0
+end preferences
+alphabet
+  powerset()
+  exclude {p, q}
+end alphabet
+"""
+        t = self._make_transpiler(src)
+        assert len(t._alphabet) == 3
+        assert {"p", "q"} not in t._alphabet
+
+    def test_exclude_shorthand_single_prop(self):
+        """exclude p removes {p} from alphabet"""
+        src = """
+propositions
+  p
+end propositions
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+preferences
+  f0 >= f0
+end preferences
+alphabet
+  powerset()
+  exclude p
+end alphabet
+"""
+        t = self._make_transpiler(src)
+        assert {"p"} not in t._alphabet
+        assert set() in t._alphabet
+
+    def test_exclude_multiple_sets_on_one_line(self):
+        """exclude {p}, {} removes both exact sets"""
+        src = """
+propositions
+  p, q
+end propositions
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+preferences
+  f0 >= f0
+end preferences
+alphabet
+  powerset()
+  exclude {p}, {}
+end alphabet
+"""
+        t = self._make_transpiler(src)
+        assert {"p"} not in t._alphabet
+        assert set() not in t._alphabet
+
+    def test_exclude_missing_set_is_silent(self):
+        """Excluding a set not in alphabet raises no error"""
+        src = """
+propositions
+  p
+end propositions
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+preferences
+  f0 >= f0
+end preferences
+alphabet
+  emptyset
+  exclude {p}
+end alphabet
+"""
+        t = self._make_transpiler(src)
+        assert t._alphabet == [set()]
+
+    def test_exclude_before_generator_same_result(self):
+        """exclude before powerset gives same result as after"""
+        src_exclude_after = """
+propositions
+  p
+end propositions
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+preferences
+  f0 >= f0
+end preferences
+alphabet
+  powerset()
+  exclude {p}
+end alphabet
+"""
+        src_exclude_before = """
+propositions
+  p
+end propositions
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+preferences
+  f0 >= f0
+end preferences
+alphabet
+  exclude {p}
+  powerset()
+end alphabet
+"""
+        t1 = self._make_transpiler(src_exclude_after)
+        t2 = self._make_transpiler(src_exclude_before)
+        assert t1._alphabet == t2._alphabet
+
+    def test_singletons_without_propositions_raises(self):
+        src = """
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+preferences
+  f0 >= f0
+end preferences
+alphabet
+  singletons()
+end alphabet
+"""
+        with pytest.raises(DSLError, match="propositions"):
+            self._make_transpiler(src)
+
+    def test_powerset_subset_undeclared_raises(self):
+        src = """
+propositions
+  p
+end propositions
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+preferences
+  f0 >= f0
+end preferences
+alphabet
+  powerset([p, z])
+end alphabet
+"""
+        with pytest.raises(DSLError, match="undeclared"):
+            self._make_transpiler(src)
+
+    def test_exclude_undeclared_prop_raises(self):
+        src = """
+propositions
+  p
+end propositions
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+preferences
+  f0 >= f0
+end preferences
+alphabet
+  powerset()
+  exclude {z}
+end alphabet
+"""
+        with pytest.raises(DSLError, match="undeclared"):
+            self._make_transpiler(src)
+
+    def test_unknown_alphabet_keyword_raises(self):
+        src = """
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+preferences
+  f0 >= f0
+end preferences
+alphabet
+  blah()
+end alphabet
+"""
+        with pytest.raises(DSLError):
             self._make_transpiler(src)
 
 

@@ -7,6 +7,39 @@ from prefltlf2pdfa.semantics import (
 )
 from ltlf2dfa.parser.ltlf import LTLfParser as _LTLfParser
 import prefltlf2pdfa.utils as _utils
+import re
+
+
+def _parse_prop_list(s: str) -> list[str]:
+    """Parse '[p, q, r]' bracket content into a list of stripped prop names."""
+    return [p.strip() for p in s.split(",") if p.strip()]
+
+
+def _parse_set_literal(token: str) -> set:
+    """Parse '{p, q}' or '{}' string into a Python set of prop strings."""
+    inner = token[1:-1].strip()
+    return set() if not inner else {p.strip() for p in inner.split(",") if p.strip()}
+
+
+def _parse_exclude_targets(rest: str) -> list[set]:
+    """Parse the argument after 'exclude'.
+
+    Accepts:
+      '{a, b}, {c}'  → [{'a','b'}, {'c'}]
+      'p'            → [{'p'}]
+    """
+    rest = rest.strip()
+    if rest.startswith("{"):
+        return [
+            _parse_set_literal(m.group(0))
+            for m in re.finditer(r'\{[^}]*\}', rest)
+        ]
+    if re.fullmatch(r'[a-zA-Z_][a-zA-Z0-9_]*', rest):
+        return [{rest}]
+    raise DSLError(
+        f"Invalid exclude argument: '{rest}'. "
+        f"Expected '{{prop, ...}}' sets or a single proposition name."
+    )
 
 _LTLF_PARSER = _LTLfParser()
 
@@ -94,56 +127,106 @@ class Transpiler:
         """Build alphabet from alphabet block or default to powerset(propositions)."""
         declared = set(self._spec.propositions) if self._spec.propositions else None
 
-        # No alphabet block
+        # No alphabet block: default to powerset of declared props, or None
         if self._spec.alphabet is None:
             if declared:
                 return _utils.powerset(declared)
             return None
 
-        raw = self._spec.alphabet.strip()
+        generators: list[set] = []
+        exclude_targets: list[set] = []
 
-        # powerset() shorthand as sole content
-        if raw == "powerset()":
-            if not declared:
-                raise DSLError(
-                    "'powerset()' in alphabet block requires a propositions block"
-                )
-            return _utils.powerset(declared)
-
-        # Parse explicit sets (and possibly inline powerset() tokens)
-        tokens: list[str] = []
-        for line in raw.splitlines():
-            for token in line.split(";"):
-                token = token.strip()
-                if token:
-                    tokens.append(token)
-
-        alphabet: list[set] = []
-        for token in tokens:
-            if token == "powerset()":
-                if not declared:
-                    raise DSLError(
-                        "'powerset()' in alphabet block requires a propositions block"
-                    )
-                alphabet.extend(_utils.powerset(declared))
+        for line in self._spec.alphabet.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
                 continue
-            if not (token.startswith("{") and token.endswith("}")):
-                raise DSLError(
-                    f"Invalid alphabet entry: '{token}'. "
-                    f"Expected '{{prop, ...}}' or 'powerset()'"
-                )
-            inner = token[1:-1].strip()
-            s = set() if not inner else {p.strip() for p in inner.split(",")}
-            if declared is not None:
-                undeclared = s - declared
-                if undeclared:
-                    raise DSLError(
-                        f"Alphabet entry {token} contains undeclared proposition(s): "
-                        f"{sorted(undeclared)}"
-                    )
-            alphabet.append(s)
 
-        return alphabet
+            # powerset() or powerset([p, q, ...])
+            m = re.fullmatch(r'powerset\(\s*(?:\[([^\]]*)\])?\s*\)', line)
+            if m:
+                if m.group(1) is not None:
+                    props = set(_parse_prop_list(m.group(1)))
+                    if declared is not None:
+                        undeclared = props - declared
+                        if undeclared:
+                            raise DSLError(
+                                f"powerset([...]) contains undeclared proposition(s): {sorted(undeclared)}"
+                            )
+                else:
+                    if declared is None:
+                        raise DSLError("'powerset()' in alphabet block requires a propositions block")
+                    props = declared
+                generators.extend(_utils.powerset(props))
+                continue
+
+            # singletons() or singletons([p, q, ...])
+            m = re.fullmatch(r'singletons\(\s*(?:\[([^\]]*)\])?\s*\)', line)
+            if m:
+                if m.group(1) is not None:
+                    props = set(_parse_prop_list(m.group(1)))
+                    if declared is not None:
+                        undeclared = props - declared
+                        if undeclared:
+                            raise DSLError(
+                                f"singletons([...]) contains undeclared proposition(s): {sorted(undeclared)}"
+                            )
+                else:
+                    if declared is None:
+                        raise DSLError("'singletons()' in alphabet block requires a propositions block")
+                    props = declared
+                generators.extend([{p} for p in sorted(props)])
+                continue
+
+            # emptyset
+            if line == "emptyset":
+                generators.append(set())
+                continue
+
+            # exclude {a, b}, {c} or exclude prop
+            if line.startswith("exclude"):
+                rest = line[len("exclude"):].strip()
+                targets = _parse_exclude_targets(rest)
+                for t in targets:
+                    if declared is not None:
+                        undeclared = t - declared
+                        if undeclared:
+                            raise DSLError(
+                                f"exclude target contains undeclared proposition(s): {sorted(undeclared)}"
+                            )
+                exclude_targets.extend(targets)
+                continue
+
+            # explicit set {p, q} or {}
+            if line.startswith("{") and line.endswith("}"):
+                s = _parse_set_literal(line)
+                if declared is not None:
+                    undeclared = s - declared
+                    if undeclared:
+                        raise DSLError(
+                            f"Alphabet entry {line} contains undeclared proposition(s): {sorted(undeclared)}"
+                        )
+                generators.append(s)
+                continue
+
+            raise DSLError(
+                f"Invalid alphabet entry: '{line}'. "
+                f"Expected powerset(), singletons(), emptyset, {{...}}, or exclude ..."
+            )
+
+        # Pass 1 result: deduplicate generators (preserve first-seen order)
+        result: list[set] = []
+        for s in generators:
+            if s not in result:
+                result.append(s)
+
+        # Pass 2: apply excludes (exact match; silent if not present)
+        for ex in exclude_targets:
+            try:
+                result.remove(ex)
+            except ValueError:
+                pass
+
+        return result
 
     def _resolve_term(self, term: str) -> int:
         """Resolve a preference term (name or exact body) to its 0-based index."""

@@ -12,5 +12,6 @@ preferences
 end preferences
 
 alphabet
-  {}; {p}
+  {}
+  {p}
 end alphabet
