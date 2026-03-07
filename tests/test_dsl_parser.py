@@ -213,3 +213,53 @@ end preferences
         assert spec.preferences[0].op == ">"
         assert spec.preferences[0].lhs == "f1"
         assert spec.preferences[0].rhs == "f0"
+
+
+class TestVerbatimPreferences:
+    def _two_formula_spec(self, pref_line: str) -> Spec:
+        return parse_spec(f"""
+ltlf-formulas
+  f0: G p
+  f1: F q
+end ltlf-formulas
+
+preferences
+  {pref_line}
+end preferences
+""")
+
+    def test_strictly_preferred(self):
+        spec = self._two_formula_spec("f0 is strictly preferred to f1")
+        assert spec.preferences[0].op == ">"
+        assert spec.preferences[0].lhs == "f0"
+        assert spec.preferences[0].rhs == "f1"
+
+    def test_weakly_preferred(self):
+        spec = self._two_formula_spec("f0 is weakly preferred to f1")
+        assert spec.preferences[0].op == ">="
+
+    def test_indifferent(self):
+        spec = self._two_formula_spec("f0 is indifferent to f1")
+        assert spec.preferences[0].op == "~"
+
+    def test_incomparable(self):
+        spec = self._two_formula_spec("f0 is incomparable to f1")
+        assert spec.preferences[0].op == "<>"
+
+    def test_mixed_verbatim_and_operator(self):
+        src = """
+ltlf-formulas
+  f0: G p
+  f1: F q
+  f2: true
+end ltlf-formulas
+
+preferences
+  f0 is strictly preferred to f1
+  f1 >= f2
+end preferences
+"""
+        spec = parse_spec(src)
+        assert len(spec.preferences) == 2
+        assert spec.preferences[0].op == ">"
+        assert spec.preferences[1].op == ">="
