@@ -127,6 +127,18 @@ class TestDSLtoPDFAPipeline:
         assert t._options.semantics == "AE"
         assert t._options.auto_complete == "none"
 
+    def test_alphabet_keywords_fixture_parses(self):
+        path = FIXTURES / "with_alphabet_keywords.spec"
+        logger.info(f"[alpha-kw] Loading {path.name}")
+        spec = parse_spec(path.read_text())
+        t = Transpiler(spec)
+        logger.info(f"[alpha-kw] Alphabet: {t._alphabet}")
+        # singletons({p,q}) = [{p},{q}]; emptyset adds {}; exclude {} removes it → 2 sets
+        assert len(t._alphabet) == 2
+        assert {"p"} in t._alphabet
+        assert {"q"} in t._alphabet
+        assert set() not in t._alphabet
+
     def test_erroneous_undeclared_prop_raises(self):
         path = FIXTURES / "erroneous" / "undeclared_prop.spec"
         logger.info(f"[error] Loading {path.name}")
