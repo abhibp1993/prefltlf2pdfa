@@ -1,0 +1,494 @@
+import pytest
+from prefltlf2pdfa.dsl.parser import parse_spec
+from prefltlf2pdfa.dsl.models import Spec, PrefStmt
+from prefltlf2pdfa.dsl.errors import DSLError
+
+
+MINIMAL = """
+ltlf-formulas
+  safety: G safe
+  liveness: F clean
+end ltlf-formulas
+
+preferences
+  safety > liveness
+end preferences
+"""
+
+
+class TestFormulasBlock:
+    def test_formula_names_parsed(self):
+        spec = parse_spec(MINIMAL)
+        assert list(spec.formulas.keys()) == ["safety", "liveness"]
+
+    def test_formula_bodies_parsed(self):
+        spec = parse_spec(MINIMAL)
+        assert spec.formulas["safety"] == "G safe"
+        assert spec.formulas["liveness"] == "F clean"
+
+    def test_formula_declaration_order_preserved(self):
+        src = """
+ltlf-formulas
+  z_last: true
+  a_first: false
+end ltlf-formulas
+
+preferences
+  z_last >= a_first
+end preferences
+"""
+        spec = parse_spec(src)
+        assert list(spec.formulas.keys()) == ["z_last", "a_first"]
+
+    def test_single_formula(self):
+        src = """
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+
+preferences
+  f0 >= f0
+end preferences
+"""
+        spec = parse_spec(src)
+        assert len(spec.formulas) == 1
+        assert spec.formulas["f0"] == "G p"
+
+    def test_formula_body_with_complex_ltlf(self):
+        src = """
+ltlf-formulas
+  complex: F(a) & G(b | !c)
+end ltlf-formulas
+
+preferences
+  complex >= complex
+end preferences
+"""
+        spec = parse_spec(src)
+        assert spec.formulas["complex"] == "F(a) & G(b | !c)"
+
+    def test_underscore_in_name(self):
+        src = """
+ltlf-formulas
+  safe_first: G safe
+end ltlf-formulas
+
+preferences
+  safe_first >= safe_first
+end preferences
+"""
+        spec = parse_spec(src)
+        assert "safe_first" in spec.formulas
+
+    def test_comments_ignored(self):
+        src = """
+# This is a top-level comment
+ltlf-formulas
+  f0: G safe  # inline comment
+end ltlf-formulas
+
+preferences
+  f0 >= f0
+end preferences
+"""
+        spec = parse_spec(src)
+        assert spec.formulas["f0"] == "G safe"
+
+
+class TestPreferenceOperators:
+    def _spec_with_prefs(self, pref_line: str) -> Spec:
+        return parse_spec(f"""
+ltlf-formulas
+  f0: G p
+  f1: F q
+end ltlf-formulas
+
+preferences
+  {pref_line}
+end preferences
+""")
+
+    def test_strict_preference(self):
+        spec = self._spec_with_prefs("f0 > f1")
+        assert len(spec.preferences) == 1
+        assert spec.preferences[0].op == ">"
+        assert spec.preferences[0].lhs == "f0"
+        assert spec.preferences[0].rhs == "f1"
+
+    def test_weak_preference(self):
+        spec = self._spec_with_prefs("f0 >= f1")
+        assert spec.preferences[0].op == ">="
+
+    def test_indifferent(self):
+        spec = self._spec_with_prefs("f0 ~ f1")
+        assert spec.preferences[0].op == "~"
+
+    def test_incomparable(self):
+        spec = self._spec_with_prefs("f0 <> f1")
+        assert spec.preferences[0].op == "<>"
+
+    def test_reverse_strict_normalized(self):
+        # f0 < f1  →  PrefStmt(lhs="f1", op=">", rhs="f0")
+        spec = self._spec_with_prefs("f0 < f1")
+        p = spec.preferences[0]
+        assert p.op == ">"
+        assert p.lhs == "f1"
+        assert p.rhs == "f0"
+
+    def test_reverse_weak_normalized(self):
+        spec = self._spec_with_prefs("f0 <= f1")
+        p = spec.preferences[0]
+        assert p.op == ">="
+        assert p.lhs == "f1"
+        assert p.rhs == "f0"
+
+    def test_multiple_preference_statements(self):
+        src = """
+ltlf-formulas
+  f0: G p
+  f1: F q
+  f2: true
+end ltlf-formulas
+
+preferences
+  f0 > f1
+  f1 >= f2
+end preferences
+"""
+        spec = parse_spec(src)
+        assert len(spec.preferences) == 2
+
+
+class TestChainExpansion:
+    def test_three_term_chain(self):
+        src = """
+ltlf-formulas
+  f0: G p
+  f1: F q
+  f2: true
+end ltlf-formulas
+
+preferences
+  f0 > f1 >= f2
+end preferences
+"""
+        spec = parse_spec(src)
+        assert len(spec.preferences) == 2
+        assert spec.preferences[0] == PrefStmt(lhs="f0", op=">", rhs="f1", line=spec.preferences[0].line)
+        assert spec.preferences[1] == PrefStmt(lhs="f1", op=">=", rhs="f2", line=spec.preferences[1].line)
+
+    def test_four_term_chain(self):
+        src = """
+ltlf-formulas
+  f0: G p
+  f1: F q
+  f2: true
+  f3: false
+end ltlf-formulas
+
+preferences
+  f0 > f1 >= f2 ~ f3
+end preferences
+"""
+        spec = parse_spec(src)
+        assert len(spec.preferences) == 3
+        ops = [p.op for p in spec.preferences]
+        assert ops == [">", ">=", "~"]
+
+    def test_chain_with_normalization(self):
+        # f0 < f1 > f2  →  [PrefStmt(f1,>,f0), PrefStmt(f1,>,f2)]
+        src = """
+ltlf-formulas
+  f0: G p
+  f1: F q
+  f2: true
+end ltlf-formulas
+
+preferences
+  f0 < f1 > f2
+end preferences
+"""
+        spec = parse_spec(src)
+        assert len(spec.preferences) == 2
+        assert spec.preferences[0].op == ">"
+        assert spec.preferences[0].lhs == "f1"
+        assert spec.preferences[0].rhs == "f0"
+
+
+class TestVerbatimPreferences:
+    def _two_formula_spec(self, pref_line: str) -> Spec:
+        return parse_spec(f"""
+ltlf-formulas
+  f0: G p
+  f1: F q
+end ltlf-formulas
+
+preferences
+  {pref_line}
+end preferences
+""")
+
+    def test_strictly_preferred(self):
+        spec = self._two_formula_spec("f0 is strictly preferred to f1")
+        assert spec.preferences[0].op == ">"
+        assert spec.preferences[0].lhs == "f0"
+        assert spec.preferences[0].rhs == "f1"
+
+    def test_weakly_preferred(self):
+        spec = self._two_formula_spec("f0 is weakly preferred to f1")
+        assert spec.preferences[0].op == ">="
+
+    def test_indifferent(self):
+        spec = self._two_formula_spec("f0 is indifferent to f1")
+        assert spec.preferences[0].op == "~"
+
+    def test_incomparable(self):
+        spec = self._two_formula_spec("f0 is incomparable to f1")
+        assert spec.preferences[0].op == "<>"
+
+    def test_mixed_verbatim_and_operator(self):
+        src = """
+ltlf-formulas
+  f0: G p
+  f1: F q
+  f2: true
+end ltlf-formulas
+
+preferences
+  f0 is strictly preferred to f1
+  f1 >= f2
+end preferences
+"""
+        spec = parse_spec(src)
+        assert len(spec.preferences) == 2
+        assert spec.preferences[0].op == ">"
+        assert spec.preferences[1].op == ">="
+
+
+class TestExactFormulaRefs:
+    def test_exact_ref_in_preference(self):
+        src = """
+ltlf-formulas
+  safety: G safe
+  liveness: F clean
+end ltlf-formulas
+
+preferences
+  (G safe) > (F clean)
+end preferences
+"""
+        spec = parse_spec(src)
+        p = spec.preferences[0]
+        assert p.lhs == "G safe"
+        assert p.rhs == "F clean"
+        assert p.op == ">"
+
+    def test_exact_ref_must_exist(self):
+        src = """
+ltlf-formulas
+  safety: G safe
+end ltlf-formulas
+
+preferences
+  (G safe) > (F nonexistent)
+end preferences
+"""
+        with pytest.raises(DSLError, match="Unknown formula reference"):
+            parse_spec(src)
+
+    def test_mixed_name_and_exact_ref(self):
+        src = """
+ltlf-formulas
+  safety: G safe
+  liveness: F clean
+end ltlf-formulas
+
+preferences
+  safety > (F clean)
+end preferences
+"""
+        spec = parse_spec(src)
+        assert spec.preferences[0].lhs == "safety"
+        assert spec.preferences[0].rhs == "F clean"
+
+
+class TestOptionalPropositions:
+    def test_no_propositions_block(self):
+        src = """
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+
+preferences
+  f0 >= f0
+end preferences
+"""
+        spec = parse_spec(src)
+        assert spec.propositions == []
+
+    def test_propositions_comma_separated(self):
+        src = """
+propositions
+  clean, charged, safe
+end propositions
+
+ltlf-formulas
+  f0: G safe
+end ltlf-formulas
+
+preferences
+  f0 >= f0
+end preferences
+"""
+        spec = parse_spec(src)
+        assert set(spec.propositions) == {"clean", "charged", "safe"}
+
+    def test_propositions_one_per_line(self):
+        src = """
+propositions
+  clean
+  charged
+  safe
+end propositions
+
+ltlf-formulas
+  f0: G safe
+end ltlf-formulas
+
+preferences
+  f0 >= f0
+end preferences
+"""
+        spec = parse_spec(src)
+        assert "safe" in spec.propositions
+
+
+class TestStubBlocks:
+    def _base_spec(self, extra_block: str = "") -> str:
+        return f"""
+{extra_block}
+
+ltlf-formulas
+  f0: G safe
+end ltlf-formulas
+
+preferences
+  f0 >= f0
+end preferences
+"""
+
+    def test_alphabet_stub_stored_raw(self):
+        src = self._base_spec("""
+alphabet
+  powerset()
+  exclude charged
+end alphabet
+""")
+        spec = parse_spec(src)
+        assert spec.alphabet is not None
+        assert "powerset" in spec.alphabet
+
+    def test_options_stub_stored_raw(self):
+        src = self._base_spec("""
+options
+  semantics = MaxAE
+  auto-complete = minimal
+end options
+""")
+        spec = parse_spec(src)
+        assert spec.options is not None
+        assert "MaxAE" in spec.options
+
+    def test_no_stubs(self):
+        spec = parse_spec(self._base_spec())
+        assert spec.alphabet is None
+        assert spec.options is None
+
+
+class TestSemanticErrors:
+    def test_duplicate_formula_name_raises(self):
+        src = """
+ltlf-formulas
+  f0: G p
+  f0: F q
+end ltlf-formulas
+
+preferences
+  f0 > f0
+end preferences
+"""
+        with pytest.raises(DSLError, match="Duplicate formula name 'f0'"):
+            parse_spec(src)
+
+    def test_duplicate_formula_name_has_line_number(self):
+        src = """
+ltlf-formulas
+  f0: G p
+  f0: F q
+end ltlf-formulas
+
+preferences
+  f0 > f0
+end preferences
+"""
+        with pytest.raises(DSLError) as exc_info:
+            parse_spec(src)
+        assert exc_info.value.line is not None
+
+    def test_unknown_formula_name_raises(self):
+        src = """
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+
+preferences
+  f0 > f_typo
+end preferences
+"""
+        with pytest.raises(DSLError, match="Unknown formula reference 'f_typo'"):
+            parse_spec(src)
+
+    def test_unknown_name_suggests_close_match(self):
+        src = """
+ltlf-formulas
+  safety: G safe
+end ltlf-formulas
+
+preferences
+  safety > safty
+end preferences
+"""
+        with pytest.raises(DSLError) as exc_info:
+            parse_spec(src)
+        assert "safety" in str(exc_info.value)  # suggestion present
+
+    def test_syntax_error_raises_dsl_error(self):
+        src = """
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+
+preferences
+  f0 ??? f0
+end preferences
+"""
+        with pytest.raises(DSLError):
+            parse_spec(src)
+
+    def test_missing_formulas_block_raises(self):
+        src = """
+preferences
+  f0 > f1
+end preferences
+"""
+        with pytest.raises(DSLError):
+            parse_spec(src)
+
+    def test_missing_preferences_block_raises(self):
+        src = """
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+"""
+        with pytest.raises(DSLError):
+            parse_spec(src)

@@ -25,10 +25,9 @@ setup(
         # List your project's dependencies here, for example:
         # 'requests>=2.25.1',
     ],
-    # entry_points={
-    #     'console_scripts': [
-    #         # Add terminal commands, for example:
-    #         # 'your_script_name=your_package.module:function',
-    #     ],
-    # },
+    entry_points={
+        "console_scripts": [
+            "prefltlf-compile=prefltlf2pdfa.dsl.cli:main",
+        ],
+    },
 )
