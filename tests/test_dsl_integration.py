@@ -93,6 +93,90 @@ class TestEquivalenceToLegacyFormat:
         assert ">=, 2, 1" in result
 
 
+class TestDSLtoPDFAPipeline:
+    """Full pipeline: .spec text → PrefAutomaton (MONA required for slow tests)."""
+
+    def test_propositions_fixture_parses_and_transpiles(self):
+        path = FIXTURES / "with_propositions.spec"
+        logger.info(f"[props] Loading {path.name}")
+        spec = parse_spec(path.read_text())
+        logger.info(f"[props] Propositions: {spec.propositions}")
+        logger.info(f"[props] Formulas: {list(spec.formulas.keys())}")
+        t = Transpiler(spec)
+        logger.info(f"[props] Alphabet: {t._alphabet}")
+        assert t._alphabet is not None
+        assert len(t._alphabet) == 4   # powerset({p, q})
+
+    def test_alphabet_fixture_parses_correct_alphabet(self):
+        path = FIXTURES / "with_alphabet.spec"
+        logger.info(f"[alpha] Loading {path.name}")
+        spec = parse_spec(path.read_text())
+        t = Transpiler(spec)
+        logger.info(f"[alpha] Alphabet: {t._alphabet}")
+        assert len(t._alphabet) == 2   # explicit: {}, {p}
+        assert set() in t._alphabet
+        assert {"p"} in t._alphabet
+
+    def test_options_fixture_parses_semantics(self):
+        path = FIXTURES / "with_options.spec"
+        logger.info(f"[opts] Loading {path.name}")
+        spec = parse_spec(path.read_text())
+        t = Transpiler(spec)
+        logger.info(f"[opts] Parsed semantics alias: {t._options.semantics}")
+        logger.info(f"[opts] Parsed auto_complete: {t._options.auto_complete}")
+        assert t._options.semantics == "AE"
+        assert t._options.auto_complete == "none"
+
+    def test_erroneous_undeclared_prop_raises(self):
+        path = FIXTURES / "erroneous" / "undeclared_prop.spec"
+        logger.info(f"[error] Loading {path.name}")
+        spec = parse_spec(path.read_text())
+        with pytest.raises(DSLError, match="undeclared"):
+            Transpiler(spec)
+        logger.info("[error] Got expected DSLError for undeclared proposition")
+
+    @pytest.mark.slow
+    def test_to_pdfa_returns_pref_automaton(self):
+        """MONA required."""
+        from prefltlf2pdfa import PrefAutomaton
+        path = FIXTURES / "complete_for_pdfa.spec"
+        logger.info(f"[pdfa] Loading {path.name}")
+        spec = parse_spec(path.read_text())
+        t = Transpiler(spec)
+        logger.info(f"[pdfa] Options: semantics={t._options.semantics}, auto_complete={t._options.auto_complete}")
+        logger.info(f"[pdfa] Alphabet: {t._alphabet}")
+        aut = t.to_pdfa()
+        logger.info(f"[pdfa] PrefAutomaton states: {list(aut.get_states())}")
+        logger.info(f"[pdfa] PrefAutomaton pref_graph nodes: {list(aut.pref_graph.nodes())}")
+        assert isinstance(aut, PrefAutomaton)
+
+    @pytest.mark.slow
+    def test_to_pdfa_with_explicit_alphabet(self):
+        """MONA required."""
+        from prefltlf2pdfa import PrefAutomaton
+        path = FIXTURES / "with_alphabet.spec"
+        logger.info(f"[pdfa] Loading {path.name}")
+        spec = parse_spec(path.read_text())
+        t = Transpiler(spec)
+        logger.info(f"[pdfa] Explicit alphabet: {t._alphabet}")
+        aut = t.to_pdfa()
+        logger.info(f"[pdfa] PrefAutomaton constructed successfully")
+        assert isinstance(aut, PrefAutomaton)
+
+    @pytest.mark.slow
+    def test_to_pdfa_semantics_from_options(self):
+        """MONA required. Semantics 'AE' from options block is used."""
+        from prefltlf2pdfa import PrefAutomaton
+        path = FIXTURES / "with_options.spec"
+        logger.info(f"[pdfa] Loading {path.name}")
+        spec = parse_spec(path.read_text())
+        t = Transpiler(spec)
+        logger.info(f"[pdfa] Using semantics alias from options: {t._options.semantics}")
+        aut = t.to_pdfa()
+        logger.info(f"[pdfa] PrefAutomaton constructed with AE semantics")
+        assert isinstance(aut, PrefAutomaton)
+
+
 class TestEndToEndPipeline:
     """Full pipeline: .spec text → PrefLTLf object (no MONA needed)."""
 
