@@ -11,7 +11,7 @@ Public API:
 """
 
 from .errors import DSLError
-from .models import Spec, FormulaDecl, PrefStmt
+from .models import Spec, FormulaDecl, PrefStmt, SpecOptions
 from .parser import parse_spec
 from .transpiler import Transpiler
 
@@ -27,6 +27,7 @@ __all__ = [
     "Spec",
     "FormulaDecl",
     "PrefStmt",
+    "SpecOptions",
     "parse_spec",
     "Transpiler",
     "transpile",

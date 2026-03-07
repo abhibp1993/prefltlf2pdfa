@@ -2,6 +2,12 @@ from dataclasses import dataclass, field
 
 
 @dataclass
+class SpecOptions:
+    semantics: str = "MaxAE"       # alias string; resolved to Callable in to_pdfa()
+    auto_complete: str = "none"    # "none", "minimal", or "incomparable"
+
+
+@dataclass
 class FormulaDecl:
     name: str
     ltlf_str: str
