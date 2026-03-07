@@ -263,3 +263,101 @@ end preferences
         assert len(spec.preferences) == 2
         assert spec.preferences[0].op == ">"
         assert spec.preferences[1].op == ">="
+
+
+class TestExactFormulaRefs:
+    def test_exact_ref_in_preference(self):
+        src = """
+ltlf-formulas
+  safety: G safe
+  liveness: F clean
+end ltlf-formulas
+
+preferences
+  (G safe) > (F clean)
+end preferences
+"""
+        spec = parse_spec(src)
+        p = spec.preferences[0]
+        assert p.lhs == "G safe"
+        assert p.rhs == "F clean"
+        assert p.op == ">"
+
+    def test_exact_ref_must_exist(self):
+        src = """
+ltlf-formulas
+  safety: G safe
+end ltlf-formulas
+
+preferences
+  (G safe) > (F nonexistent)
+end preferences
+"""
+        with pytest.raises(DSLError, match="Unknown formula reference"):
+            parse_spec(src)
+
+    def test_mixed_name_and_exact_ref(self):
+        src = """
+ltlf-formulas
+  safety: G safe
+  liveness: F clean
+end ltlf-formulas
+
+preferences
+  safety > (F clean)
+end preferences
+"""
+        spec = parse_spec(src)
+        assert spec.preferences[0].lhs == "safety"
+        assert spec.preferences[0].rhs == "F clean"
+
+
+class TestOptionalPropositions:
+    def test_no_propositions_block(self):
+        src = """
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+
+preferences
+  f0 >= f0
+end preferences
+"""
+        spec = parse_spec(src)
+        assert spec.propositions == []
+
+    def test_propositions_comma_separated(self):
+        src = """
+propositions
+  clean, charged, safe
+end propositions
+
+ltlf-formulas
+  f0: G safe
+end ltlf-formulas
+
+preferences
+  f0 >= f0
+end preferences
+"""
+        spec = parse_spec(src)
+        assert set(spec.propositions) == {"clean", "charged", "safe"}
+
+    def test_propositions_one_per_line(self):
+        src = """
+propositions
+  clean
+  charged
+  safe
+end propositions
+
+ltlf-formulas
+  f0: G safe
+end ltlf-formulas
+
+preferences
+  f0 >= f0
+end preferences
+"""
+        spec = parse_spec(src)
+        assert "safe" in spec.propositions
