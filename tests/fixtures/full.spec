@@ -8,6 +8,7 @@ end alphabet
 
 options
   semantics = MaxAE
+  auto-complete = minimal
 end options
 
 ltlf-formulas
