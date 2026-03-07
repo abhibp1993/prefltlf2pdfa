@@ -157,3 +157,59 @@ end preferences
 """
         spec = parse_spec(src)
         assert len(spec.preferences) == 2
+
+
+class TestChainExpansion:
+    def test_three_term_chain(self):
+        src = """
+ltlf-formulas
+  f0: G p
+  f1: F q
+  f2: true
+end ltlf-formulas
+
+preferences
+  f0 > f1 >= f2
+end preferences
+"""
+        spec = parse_spec(src)
+        assert len(spec.preferences) == 2
+        assert spec.preferences[0] == PrefStmt(lhs="f0", op=">", rhs="f1", line=spec.preferences[0].line)
+        assert spec.preferences[1] == PrefStmt(lhs="f1", op=">=", rhs="f2", line=spec.preferences[1].line)
+
+    def test_four_term_chain(self):
+        src = """
+ltlf-formulas
+  f0: G p
+  f1: F q
+  f2: true
+  f3: false
+end ltlf-formulas
+
+preferences
+  f0 > f1 >= f2 ~ f3
+end preferences
+"""
+        spec = parse_spec(src)
+        assert len(spec.preferences) == 3
+        ops = [p.op for p in spec.preferences]
+        assert ops == [">", ">=", "~"]
+
+    def test_chain_with_normalization(self):
+        # f0 < f1 > f2  →  [PrefStmt(f1,>,f0), PrefStmt(f1,>,f2)]
+        src = """
+ltlf-formulas
+  f0: G p
+  f1: F q
+  f2: true
+end ltlf-formulas
+
+preferences
+  f0 < f1 > f2
+end preferences
+"""
+        spec = parse_spec(src)
+        assert len(spec.preferences) == 2
+        assert spec.preferences[0].op == ">"
+        assert spec.preferences[0].lhs == "f1"
+        assert spec.preferences[0].rhs == "f0"
