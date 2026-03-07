@@ -1,0 +1,95 @@
+import pytest
+from prefltlf2pdfa.dsl.parser import parse_spec
+from prefltlf2pdfa.dsl.models import Spec, PrefStmt
+from prefltlf2pdfa.dsl.errors import DSLError
+
+
+MINIMAL = """
+ltlf-formulas
+  safety: G safe
+  liveness: F clean
+end ltlf-formulas
+
+preferences
+  safety > liveness
+end preferences
+"""
+
+
+class TestFormulasBlock:
+    def test_formula_names_parsed(self):
+        spec = parse_spec(MINIMAL)
+        assert list(spec.formulas.keys()) == ["safety", "liveness"]
+
+    def test_formula_bodies_parsed(self):
+        spec = parse_spec(MINIMAL)
+        assert spec.formulas["safety"] == "G safe"
+        assert spec.formulas["liveness"] == "F clean"
+
+    def test_formula_declaration_order_preserved(self):
+        src = """
+ltlf-formulas
+  z_last: true
+  a_first: false
+end ltlf-formulas
+
+preferences
+  z_last >= a_first
+end preferences
+"""
+        spec = parse_spec(src)
+        assert list(spec.formulas.keys()) == ["z_last", "a_first"]
+
+    def test_single_formula(self):
+        src = """
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+
+preferences
+  f0 >= f0
+end preferences
+"""
+        spec = parse_spec(src)
+        assert len(spec.formulas) == 1
+        assert spec.formulas["f0"] == "G p"
+
+    def test_formula_body_with_complex_ltlf(self):
+        src = """
+ltlf-formulas
+  complex: F(a) & G(b | !c)
+end ltlf-formulas
+
+preferences
+  complex >= complex
+end preferences
+"""
+        spec = parse_spec(src)
+        assert spec.formulas["complex"] == "F(a) & G(b | !c)"
+
+    def test_underscore_in_name(self):
+        src = """
+ltlf-formulas
+  safe_first: G safe
+end ltlf-formulas
+
+preferences
+  safe_first >= safe_first
+end preferences
+"""
+        spec = parse_spec(src)
+        assert "safe_first" in spec.formulas
+
+    def test_comments_ignored(self):
+        src = """
+# This is a top-level comment
+ltlf-formulas
+  f0: G safe  # inline comment
+end ltlf-formulas
+
+preferences
+  f0 >= f0
+end preferences
+"""
+        spec = parse_spec(src)
+        assert spec.formulas["f0"] == "G safe"
