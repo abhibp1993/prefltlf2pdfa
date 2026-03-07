@@ -33,6 +33,16 @@ Install all dependencies listed `requirements.txt`.
 Please, make sure you have the MONA tool installed on your system before running LTLf2DFA. 
 You can follow the instructions on http://www.brics.dk/mona/download.html to get MONA.
 
+In case you run into `library not accessible` issue: try running the following commands 
+in the terminal from the directory where you have installed MONA:
+
+```commandline
+./configure --enable-static --enable-shared=no
+make    
+make install 
+```
+
+```
 
 ### Installing prefltlf2pdfa 
 
