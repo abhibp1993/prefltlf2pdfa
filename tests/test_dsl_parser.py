@@ -361,3 +361,134 @@ end preferences
 """
         spec = parse_spec(src)
         assert "safe" in spec.propositions
+
+
+class TestStubBlocks:
+    def _base_spec(self, extra_block: str = "") -> str:
+        return f"""
+{extra_block}
+
+ltlf-formulas
+  f0: G safe
+end ltlf-formulas
+
+preferences
+  f0 >= f0
+end preferences
+"""
+
+    def test_alphabet_stub_stored_raw(self):
+        src = self._base_spec("""
+alphabet
+  powerset()
+  exclude charged
+end alphabet
+""")
+        spec = parse_spec(src)
+        assert spec.alphabet is not None
+        assert "powerset" in spec.alphabet
+
+    def test_options_stub_stored_raw(self):
+        src = self._base_spec("""
+options
+  semantics = MaxAE
+  auto-complete = minimal
+end options
+""")
+        spec = parse_spec(src)
+        assert spec.options is not None
+        assert "MaxAE" in spec.options
+
+    def test_no_stubs(self):
+        spec = parse_spec(self._base_spec())
+        assert spec.alphabet is None
+        assert spec.options is None
+
+
+class TestSemanticErrors:
+    def test_duplicate_formula_name_raises(self):
+        src = """
+ltlf-formulas
+  f0: G p
+  f0: F q
+end ltlf-formulas
+
+preferences
+  f0 > f0
+end preferences
+"""
+        with pytest.raises(DSLError, match="Duplicate formula name 'f0'"):
+            parse_spec(src)
+
+    def test_duplicate_formula_name_has_line_number(self):
+        src = """
+ltlf-formulas
+  f0: G p
+  f0: F q
+end ltlf-formulas
+
+preferences
+  f0 > f0
+end preferences
+"""
+        with pytest.raises(DSLError) as exc_info:
+            parse_spec(src)
+        assert exc_info.value.line is not None
+
+    def test_unknown_formula_name_raises(self):
+        src = """
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+
+preferences
+  f0 > f_typo
+end preferences
+"""
+        with pytest.raises(DSLError, match="Unknown formula reference 'f_typo'"):
+            parse_spec(src)
+
+    def test_unknown_name_suggests_close_match(self):
+        src = """
+ltlf-formulas
+  safety: G safe
+end ltlf-formulas
+
+preferences
+  safety > safty
+end preferences
+"""
+        with pytest.raises(DSLError) as exc_info:
+            parse_spec(src)
+        assert "safety" in str(exc_info.value)  # suggestion present
+
+    def test_syntax_error_raises_dsl_error(self):
+        src = """
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+
+preferences
+  f0 ??? f0
+end preferences
+"""
+        with pytest.raises(DSLError):
+            parse_spec(src)
+
+    def test_missing_formulas_block_raises(self):
+        src = """
+preferences
+  f0 > f1
+end preferences
+"""
+        with pytest.raises(DSLError):
+            parse_spec(src)
+
+    def test_missing_preferences_block_raises(self):
+        src = """
+ltlf-formulas
+  f0: G p
+end ltlf-formulas
+"""
+        with pytest.raises(DSLError):
+            parse_spec(src)
