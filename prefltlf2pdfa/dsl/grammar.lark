@@ -1,0 +1,41 @@
+// PrefLTLf DSL Grammar
+// Transpiles to index-based .prefltlf format.
+// NOTE: alphabet and options blocks are extracted by regex pre-processing
+//       BEFORE this grammar is applied. They do not appear here.
+
+spec: propositions_block? formulas_block preferences_block
+
+// ─── Propositions (optional) ─────────────────────────────────────────────────
+propositions_block: "propositions" prop_item+ "end" "propositions"
+prop_item: IDENT ("," IDENT)*
+
+// ─── LTLf formulas ───────────────────────────────────────────────────────────
+formulas_block: "ltlf-formulas" formula_decl+ "end" "ltlf-formulas"
+formula_decl: IDENT ":" FORMULA_BODY
+
+// ─── Preferences ─────────────────────────────────────────────────────────────
+preferences_block: "preferences" pref_stmt+ "end" "preferences"
+pref_stmt: pref_chain | pref_verbatim
+pref_chain: pref_term (PREF_OP pref_term)+
+pref_verbatim: pref_term "is" VERB_PHRASE "to" pref_term
+pref_term: IDENT       -> pref_name
+         | "(" PAREN_BODY ")" -> pref_exact
+
+// ─── Terminals ───────────────────────────────────────────────────────────────
+// PREF_OP: longer tokens listed first so ">=" matches before ">"
+PREF_OP: ">=" | "<=" | "<>" | ">" | "<" | "~"
+
+// VERB_PHRASE: priority 2 beats IDENT (priority 0) at these positions
+VERB_PHRASE.2: /strictly preferred|weakly preferred|indifferent|incomparable/
+
+// FORMULA_BODY captures rest-of-line (spaces allowed; stops at # or newline)
+FORMULA_BODY: /[^\n#]+/
+
+// PAREN_BODY captures content inside parentheses for exact formula references
+PAREN_BODY: /[^)]+/
+
+IDENT: /[a-zA-Z_][a-zA-Z0-9_]*/
+
+%ignore /[ \t]+/
+%ignore /\r?\n/
+%ignore /#[^\n]*/
