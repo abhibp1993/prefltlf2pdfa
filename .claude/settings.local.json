@@ -4,7 +4,8 @@
       "Bash(mkdir:*)",
       "Bash(pip install:*)",
       "Bash(git:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(pytest:*)"
     ]
   }
 }
