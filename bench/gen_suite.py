@@ -21,6 +21,7 @@ Each case dict:
 import argparse
 import json
 import random
+import re
 
 import numpy as np
 import spot
@@ -47,13 +48,23 @@ BASELINE = {"n": 4, "num_aps": 3, "formula_size": 5, "density": "medium", "densi
 # Formula generation
 # ---------------------------------------------------------------------------
 
+_AP_NAMES = list("abcdefghijklmnopqrstuvwxyz")
+
+
 def generate_formulas(n: int, num_aps: int, formula_size: int, seed: int) -> list:
     """Generate n random LTLf formulas with at most formula_size operators."""
+    aps = _AP_NAMES[:num_aps]
     formulas = []
-    gen = spot.randltl(num_aps, n, seed=seed, tree_size=formula_size)
+    gen = spot.randltl(aps, n, seed=seed, tree_size=formula_size)
     gen = gen.simplify().unabbreviate("WMR")
+    _SPOT_BOOL_MAP = {"1": "true", "0": "false"}
     for f in gen:
-        formulas.append(str(f))
+        s = str(f)
+        s = _SPOT_BOOL_MAP.get(s, s)
+        # ltlf2dfa requires spaces between unary temporal ops and their operands
+        # e.g. spot outputs "Fa" but the parser needs "F a"
+        s = re.sub(r'([FGX])([a-z(])', r'\1 \2', s)
+        formulas.append(s)
     # Pad with "true" if spot returns fewer than n formulas (rare edge case)
     while len(formulas) < n:
         formulas.append("true")
