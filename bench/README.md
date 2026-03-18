@@ -23,6 +23,15 @@ python bench/run_bench.py \
     --timeout 300 \
     --mem-limit-mb 4096
 
+# If running from a conda env that doesn't have spot, point --python at the
+# Python where spot and prefltlf2pdfa are installed (e.g. system python3):
+python bench/run_bench.py \
+    --suite bench/suites/suite.json \
+    --output bench/results/results.csv \
+    --timeout 300 \
+    --mem-limit-mb 4096 \
+    --python /usr/bin/python3
+
 # 3. Analyze — open bench/analyze.ipynb in Jupyter
 #    Update RESULTS_CSV in Cell 1 to point to your results CSV.
 jupyter notebook bench/analyze.ipynb

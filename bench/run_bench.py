@@ -51,11 +51,11 @@ def append_row(output_path: str, row: dict):
         writer.writerow(row)
 
 
-def run_case(case: dict, manifest_path: str, timeout: int, mem_limit_mb: int) -> dict:
+def run_case(case: dict, manifest_path: str, timeout: int, mem_limit_mb: int, python: str = None) -> dict:
     """Spawn worker.py for one case; return result dict."""
     worker = Path(__file__).parent / "worker.py"
     cmd = [
-        sys.executable, str(worker),
+        python or sys.executable, str(worker),
         "--manifest", manifest_path,
         "--case-id", case["case_id"],
         "--mem-limit-mb", str(mem_limit_mb),
@@ -114,6 +114,10 @@ def main():
     parser.add_argument("--output", required=True, help="Path to output CSV.")
     parser.add_argument("--timeout", type=int, default=300, help="Per-case timeout in seconds.")
     parser.add_argument("--mem-limit-mb", type=int, default=4096, help="RAM cap per worker in MB.")
+    parser.add_argument("--python", default=None,
+                        help="Python executable for worker subprocesses (default: sys.executable). "
+                             "Use this when the runner Python differs from the one with spot/prefltlf2pdfa installed, "
+                             "e.g. --python /usr/bin/python3")
     args = parser.parse_args()
 
     with open(args.suite) as f:
@@ -132,14 +136,15 @@ def main():
     print(f"Suite: {args.suite}")
     print(f"Output: {args.output}")
     print(f"Cases: {total} total, {done} already done, {len(pending)} to run")
-    print(f"Timeout: {args.timeout}s, RAM cap: {args.mem_limit_mb}MB\n")
+    print(f"Timeout: {args.timeout}s, RAM cap: {args.mem_limit_mb}MB")
+    print(f"Worker Python: {args.python or sys.executable}\n")
 
     for i, case in enumerate(pending):
         elapsed_label = f"[{done + i + 1}/{total}]"
         print(f"{elapsed_label} {case['case_id']} ... ", end="", flush=True)
 
         t_wall = time.perf_counter()
-        row = run_case(case, args.suite, args.timeout, args.mem_limit_mb)
+        row = run_case(case, args.suite, args.timeout, args.mem_limit_mb, python=args.python)
         wall = time.perf_counter() - t_wall
 
         append_row(args.output, row)
