@@ -1,0 +1,61 @@
+# PrefLTLf → PDFA Scalability Benchmark
+
+Scalability benchmark for `PrefLTLf.translate()`. Tests translation time, memory,
+and output size across number of formulas, atomic propositions, formula complexity,
+and partial order density.
+
+## Platform Requirement
+
+**Run on WSL2 (Ubuntu) inside Windows 11.** The RAM-capping mechanism uses
+`resource.setrlimit(RLIMIT_AS)`, a POSIX-only API. Do not run from native
+Windows shells (cmd, PowerShell, Git Bash).
+
+## Quickstart
+
+```bash
+# 1. Generate the benchmark manifest
+python bench/gen_suite.py --output bench/suites/suite.json
+
+# 2. Run (adjust timeout and RAM cap as needed)
+python bench/run_bench.py \
+    --suite bench/suites/suite.json \
+    --output bench/results/results.csv \
+    --timeout 300 \
+    --mem-limit-mb 4096
+
+# 3. Analyze — open bench/analyze.ipynb in Jupyter
+#    Update RESULTS_CSV in Cell 1 to point to your results CSV.
+jupyter notebook bench/analyze.ipynb
+```
+
+## Resuming an interrupted run
+
+Re-run step 2 with the same `--output` path. Cases already in the CSV are skipped.
+
+## Output CSV columns
+
+| Column | Meaning |
+|--------|---------|
+| `case_id` | Unique case identifier |
+| `n` | Number of LTLf formulas |
+| `num_aps` | Atomic propositions |
+| `formula_size` | Max operator count |
+| `density` | Partial order density label |
+| `seed` | Random seed |
+| `status` | `ok` / `timeout` / `oom` / `error` |
+| `t_dfa` | LTLf→DFA stage time (s) |
+| `t_semi` | Semi-automaton stage time (s) |
+| `t_pref` | Preference graph stage time (s) |
+| `t_total` | Total translation time (s) |
+| `peak_mem_mb` | Peak memory (MB, tracemalloc) |
+| `semi_states` | States in semi-automaton |
+| `semi_transitions` | Transitions in semi-automaton |
+| `pref_nodes` | Nodes in preference graph |
+| `pref_edges` | Edges in preference graph |
+
+## Defaults
+
+- Timeout: 300 s
+- RAM cap: 4096 MB
+- Seeds: 0–4 (5 repetitions per parameter combination)
+- ~260 total cases
