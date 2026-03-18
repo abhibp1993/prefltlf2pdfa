@@ -171,3 +171,6 @@ prefltlf.ppk
 examples/out/
 
 output/
+
+bench/suites/*.json
+bench/results/*.csv
