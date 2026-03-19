@@ -174,3 +174,6 @@ output/
 
 bench/suites/*.json
 bench/results/*.csv
+bench/results/*.pdf
+bench/results/*.png
+bench/results/*.svg
