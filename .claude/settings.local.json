@@ -5,7 +5,24 @@
       "Bash(pip install:*)",
       "Bash(git:*)",
       "Bash(python:*)",
-      "Bash(pytest:*)"
+      "Bash(pytest:*)",
+      "WebFetch(domain:gitlab.lre.epita.fr)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:spot.lre.epita.fr)",
+      "WebFetch(domain:arxiv.org)",
+      "mcp__arxiv-mcp-server__search_papers",
+      "Read(//c/Users/abhib/AppData/Local/Programs//**)",
+      "Read(//c/Users/abhib/miniconda3/**)",
+      "Read(//c/Users/abhib/anaconda3/**)",
+      "Read(//c/Users/abhib/**)",
+      "Bash(\"/c/Users/abhib/.conda/envs/prefltlf2pdfa/python.exe\" -c \"import spot; print\\(''spot available:'', spot.__version__\\)\")",
+      "Bash(\"/c/Users/abhib/.conda/envs/prefltlf2pdfa/python.exe\" -c \"import sys; print\\(sys.version\\); import numpy; print\\(''numpy ok''\\)\")",
+      "Bash(wsl -e bash -c \"find /home /root /mnt/c/Users -name ''spot'' -o -name ''conda'' 2>/dev/null | head -10; ls /mnt/c/Users/abhib/.conda/envs/ 2>/dev/null\")",
+      "Bash(wsl -e bash -c \"cd /mnt/c/MyWorld/Projects/prefltlf2pdfa && /usr/bin/python3 bench/gen_suite.py --output bench/suites/smoke.json && echo ''Done''\")",
+      "Bash(wsl -e bash -c \"/usr/bin/pip3 install numpy 2>&1 | tail -3\")",
+      "Bash(wsl -e bash -c \"python3 -m pip install numpy 2>&1 | tail -3\")",
+      "Bash(wsl -e bash -c \"python3 -m pip install numpy --break-system-packages 2>&1 | tail -3\")"
     ]
   }
 }
