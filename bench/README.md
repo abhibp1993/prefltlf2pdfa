@@ -41,6 +41,14 @@ jupyter notebook bench/analyze.ipynb
 
 Re-run step 2 with the same `--output` path. Cases already in the CSV are skipped.
 
+## Log file
+
+A log file is written alongside the results CSV (e.g. `bench/results/results.log`).
+Override with `--log-file path/to/custom.log`.
+
+- **Terminal** — shows INFO and above: case status with a short inline error snippet for failures
+- **Log file** — shows DEBUG and above: full tracebacks, worker stderr, per-case timing details
+
 ## Output CSV columns
 
 | Column | Meaning |

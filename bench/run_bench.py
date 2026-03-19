@@ -9,6 +9,7 @@ Usage:
         --mem-limit-mb 4096
 
 Supports resuming: skips case_ids already present in --output CSV.
+Log file defaults to <output>.log (e.g. results/results.log).
 """
 
 import argparse
@@ -20,12 +21,41 @@ import sys
 import time
 from pathlib import Path
 
+from loguru import logger
+
 CSV_FIELDS = [
     "case_id", "n", "num_aps", "formula_size", "density", "seed",
     "status", "t_dfa", "t_semi", "t_pref", "t_total",
     "peak_mem_mb", "max_rss_mb", "semi_states", "semi_transitions", "pref_nodes", "pref_edges",
 ]
 
+
+# ---------------------------------------------------------------------------
+# Logging setup
+# ---------------------------------------------------------------------------
+
+def setup_logger(log_path: str):
+    """Configure loguru: INFO+ to stderr (no colour), DEBUG+ to log file."""
+    logger.remove()  # remove default handler
+    logger.add(
+        sys.stderr,
+        level="INFO",
+        format="<level>{level: <8}</level> | {message}",
+        colorize=False,
+    )
+    logger.add(
+        log_path,
+        level="DEBUG",
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {message}",
+        rotation="50 MB",
+        encoding="utf-8",
+    )
+    logger.info(f"Log file: {log_path}")
+
+
+# ---------------------------------------------------------------------------
+# CSV helpers
+# ---------------------------------------------------------------------------
 
 def load_completed(output_path: str) -> set:
     """Return set of case_ids already in the output CSV."""
@@ -48,11 +78,24 @@ def write_header(output_path: str):
 def append_row(output_path: str, row: dict):
     with open(output_path, "a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
-        writer.writerow(row)
+        writer.writerow({k: row.get(k, "") for k in CSV_FIELDS})
+
+
+# ---------------------------------------------------------------------------
+# Worker runner
+# ---------------------------------------------------------------------------
+
+def _first_line(text: str) -> str:
+    """Return the first non-empty line of text, truncated to 120 chars."""
+    for line in text.splitlines():
+        line = line.strip()
+        if line:
+            return line[:120]
+    return ""
 
 
 def run_case(case: dict, manifest_path: str, timeout: int, mem_limit_mb: int, python: str = None) -> dict:
-    """Spawn worker.py for one case; return result dict."""
+    """Spawn worker.py for one case; return result dict (includes non-CSV 'error' key on failure)."""
     worker = Path(__file__).parent / "worker.py"
     cmd = [
         python or sys.executable, str(worker),
@@ -70,6 +113,8 @@ def run_case(case: dict, manifest_path: str, timeout: int, mem_limit_mb: int, py
         "seed": case["seed"],
     }
 
+    logger.debug(f"Spawning worker | case_id={case['case_id']} cmd={' '.join(cmd)}")
+
     try:
         result = subprocess.run(
             cmd,
@@ -78,35 +123,63 @@ def run_case(case: dict, manifest_path: str, timeout: int, mem_limit_mb: int, py
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        return {**base, "status": "timeout"}
+        msg = f"Exceeded {timeout}s timeout"
+        logger.warning(f"TIMEOUT | {case['case_id']} | {msg}")
+        return {**base, "status": "timeout", "error": msg}
 
     stdout = result.stdout.strip()
+    stderr = result.stderr.strip()
 
-    # Try to parse worker JSON output — take the last line in case of debug output
+    logger.debug(f"Worker finished | case_id={case['case_id']} returncode={result.returncode}")
+    if stderr:
+        logger.debug(f"Worker stderr | {case['case_id']}:\n{stderr}")
+
+    # Try to parse worker JSON output — take the last JSON line in case of debug output
     if stdout:
         for line in reversed(stdout.splitlines()):
             line = line.strip()
             if line.startswith("{"):
                 try:
                     metrics = json.loads(line)
-                    if metrics.get("status") == "ok":
+                    status = metrics.get("status", "error")
+                    if status == "ok":
+                        logger.debug(f"OK | {case['case_id']} | t_total={metrics.get('t_total')}s")
                         return {**base, **metrics}
                     else:
-                        status = metrics.get("status", "error")
-                        return {**base, "status": status}
+                        error_msg = metrics.get("error", "") or stderr
+                        if status == "oom":
+                            logger.warning(f"OOM  | {case['case_id']} | {_first_line(error_msg)}")
+                        else:
+                            logger.error(
+                                f"ERROR | {case['case_id']} | {_first_line(error_msg)}\n"
+                                f"Full traceback:\n{error_msg}"
+                            )
+                        return {**base, "status": status, "error": error_msg}
                 except json.JSONDecodeError:
                     continue
 
-    # Worker printed nothing parseable — check exit code
+    # Worker printed nothing parseable — check exit code / stderr
+    if result.returncode in (-9, -11):
+        msg = f"Killed by OS signal {result.returncode} (OOM via RLIMIT_AS)"
+        logger.warning(f"OOM  | {case['case_id']} | {msg}")
+        return {**base, "status": "oom", "error": msg}
+
     if result.returncode != 0:
-        # Distinguish OOM (killed by SIGKILL due to setrlimit) from generic error
-        # On Linux, exit code is -9 (SIGKILL) or -11 (SIGSEGV) for OOM via RLIMIT_AS
-        if result.returncode in (-9, -11):
-            return {**base, "status": "oom"}
-        return {**base, "status": "error"}
+        error_msg = stderr or stdout or f"Worker exited with code {result.returncode}"
+        logger.error(
+            f"ERROR | {case['case_id']} | exit={result.returncode} | {_first_line(error_msg)}\n"
+            f"Full output:\n{error_msg}"
+        )
+        return {**base, "status": "error", "error": error_msg}
 
-    return {**base, "status": "error"}
+    error_msg = stderr or "Worker exited 0 but produced no parseable output"
+    logger.error(f"ERROR | {case['case_id']} | {_first_line(error_msg)}")
+    return {**base, "status": "error", "error": error_msg}
 
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser()
@@ -118,7 +191,14 @@ def main():
                         help="Python executable for worker subprocesses (default: sys.executable). "
                              "Use this when the runner Python differs from the one with spot/prefltlf2pdfa installed, "
                              "e.g. --python /usr/bin/python3")
+    parser.add_argument("--log-file", default=None,
+                        help="Path to log file (default: <output>.log, e.g. results/results.log).")
     args = parser.parse_args()
+
+    log_path = args.log_file or str(Path(args.output).with_suffix(".log"))
+    Path(log_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+    setup_logger(log_path)
 
     with open(args.suite) as f:
         cases = json.load(f)
@@ -133,25 +213,33 @@ def main():
     total = len(cases)
     done = len(completed)
 
-    print(f"Suite: {args.suite}")
-    print(f"Output: {args.output}")
-    print(f"Cases: {total} total, {done} already done, {len(pending)} to run")
-    print(f"Timeout: {args.timeout}s, RAM cap: {args.mem_limit_mb}MB")
-    print(f"Worker Python: {args.python or sys.executable}\n")
+    logger.info(f"Suite:         {args.suite}")
+    logger.info(f"Output:        {args.output}")
+    logger.info(f"Cases:         {total} total, {done} already done, {len(pending)} to run")
+    logger.info(f"Timeout:       {args.timeout}s  |  RAM cap: {args.mem_limit_mb}MB")
+    logger.info(f"Worker Python: {args.python or sys.executable}")
+    print()
 
     for i, case in enumerate(pending):
-        elapsed_label = f"[{done + i + 1}/{total}]"
-        print(f"{elapsed_label} {case['case_id']} ... ", end="", flush=True)
+        label = f"[{done + i + 1}/{total}]"
+        print(f"{label} {case['case_id']} ... ", end="", flush=True)
 
         t_wall = time.perf_counter()
         row = run_case(case, args.suite, args.timeout, args.mem_limit_mb, python=args.python)
         wall = time.perf_counter() - t_wall
 
         append_row(args.output, row)
-        status = row["status"]
-        print(f"{status} ({wall:.1f}s)")
 
-    print(f"\nDone. Results written to {args.output}")
+        status = row["status"]
+        if status == "ok":
+            print(f"ok ({wall:.1f}s)")
+        else:
+            # Print first line of error message inline so failures are visible immediately
+            short = _first_line(row.get("error", "") or "")
+            suffix = f" — {short}" if short else ""
+            print(f"{status} ({wall:.1f}s){suffix}")
+
+    logger.info(f"Done. Results written to {args.output}")
 
 
 if __name__ == "__main__":
