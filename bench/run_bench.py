@@ -23,7 +23,7 @@ from pathlib import Path
 CSV_FIELDS = [
     "case_id", "n", "num_aps", "formula_size", "density", "seed",
     "status", "t_dfa", "t_semi", "t_pref", "t_total",
-    "peak_mem_mb", "semi_states", "semi_transitions", "pref_nodes", "pref_edges",
+    "peak_mem_mb", "max_rss_mb", "semi_states", "semi_transitions", "pref_nodes", "pref_edges",
 ]
 
 

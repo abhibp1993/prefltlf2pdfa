@@ -30,9 +30,9 @@ import spot
 # Parameter space
 # ---------------------------------------------------------------------------
 
-N_VALUES = [2, 3, 4, 5, 6, 8, 10]
-NUM_APS_VALUES = [2, 3, 4, 5]
-FORMULA_SIZE_VALUES = [3, 5, 8, 12]
+N_VALUES = [2, 5, 10, 15, 20, 25, 30]
+NUM_APS_VALUES = [2, 3, 5, 8, 10]
+FORMULA_SIZE_VALUES = [3, 5, 10, 15, 20]
 DENSITIES = [
     ("sparse", 0.2),
     ("medium", 0.5),
@@ -41,7 +41,7 @@ DENSITIES = [
 ]
 SEEDS = [0, 1, 2, 3, 4]
 
-BASELINE = {"n": 4, "num_aps": 3, "formula_size": 5, "density": "medium", "density_p": 0.5}
+BASELINE = {"n": 5, "num_aps": 3, "formula_size": 5, "density": "medium", "density_p": 0.5}
 
 
 # ---------------------------------------------------------------------------

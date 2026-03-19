@@ -82,9 +82,17 @@ def run_case(case: dict) -> dict:
     pref._construct_preference_graph(aut, semantics_mp_forall_exists, show_progress=False)
     t3 = time.perf_counter()
 
-    # Peak memory
+    # Peak memory (Python heap via tracemalloc)
     _, peak_bytes = tracemalloc.get_traced_memory()
     tracemalloc.stop()
+
+    # Peak RSS of this process (OS-level, includes MONA subprocesses).
+    # ru_maxrss is in KB on Linux/WSL.
+    try:
+        import resource as _resource
+        max_rss_mb = round(_resource.getrusage(_resource.RUSAGE_SELF).ru_maxrss / 1024, 4)
+    except Exception:
+        max_rss_mb = None
 
     # Output size
     semi_states = len(aut.states)
@@ -99,6 +107,7 @@ def run_case(case: dict) -> dict:
         "t_pref": round(t3 - t2, 6),
         "t_total": round(t3 - t0, 6),
         "peak_mem_mb": round(peak_bytes / (1024 * 1024), 4),
+        "max_rss_mb": max_rss_mb,
         "semi_states": semi_states,
         "semi_transitions": semi_transitions,
         "pref_nodes": pref_nodes,

@@ -56,7 +56,8 @@ Re-run step 2 with the same `--output` path. Cases already in the CSV are skippe
 | `t_semi` | Semi-automaton stage time (s) |
 | `t_pref` | Preference graph stage time (s) |
 | `t_total` | Total translation time (s) |
-| `peak_mem_mb` | Peak memory (MB, tracemalloc) |
+| `peak_mem_mb` | Peak Python-heap memory (MB, tracemalloc) |
+| `max_rss_mb` | Peak OS resident set size (MB, `resource.getrusage`, Linux/WSL only) |
 | `semi_states` | States in semi-automaton |
 | `semi_transitions` | Transitions in semi-automaton |
 | `pref_nodes` | Nodes in preference graph |
@@ -67,4 +68,4 @@ Re-run step 2 with the same `--output` path. Cases already in the CSV are skippe
 - Timeout: 300 s
 - RAM cap: 4096 MB
 - Seeds: 0–4 (5 repetitions per parameter combination)
-- ~260 total cases
+- ~300 total cases (expanded parameter space: n up to 30, |AP| up to 10, formula_size up to 20)
