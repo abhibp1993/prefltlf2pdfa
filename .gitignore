@@ -178,3 +178,4 @@ bench/results/*.log
 bench/results/*.pdf
 bench/results/*.png
 bench/results/*.svg
+bench/results/*/
