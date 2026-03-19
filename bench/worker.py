@@ -16,7 +16,9 @@ run_bench.py detects this via non-zero exit code + signal.
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 import time
 import tracemalloc
 
@@ -43,6 +45,19 @@ def build_spec_string(formulas: list, partial_order: list) -> str:
     for i, j in partial_order:
         lines.append(f">=, {i}, {j}")
     return "\n".join(lines)
+
+
+def _isolate_mona_tmpdir():
+    """
+    ltlf2dfa writes a fixed file <PACKAGE_DIR>/automa.mona and runs MONA on it.
+    When multiple workers run in parallel they clobber each other's file.
+    Redirect PACKAGE_DIR to a fresh per-process temp directory to avoid the collision.
+    The temp dir is cleaned up when this process exits.
+    """
+    import ltlf2dfa.ltlf2dfa as _ltlf2dfa
+    _tmp = tempfile.mkdtemp(prefix=f"ltlf2dfa_{os.getpid()}_")
+    _ltlf2dfa.PACKAGE_DIR = _tmp
+    return _tmp   # keep reference so caller can clean up if desired
 
 
 def run_case(case: dict) -> dict:
@@ -125,6 +140,10 @@ def main():
 
     if args.mem_limit_mb > 0:
         _apply_mem_limit(args.mem_limit_mb)
+
+    # Redirect ltlf2dfa's fixed automa.mona path to a per-process temp dir so
+    # parallel workers don't clobber each other's MONA input/output files.
+    _isolate_mona_tmpdir()
 
     with open(args.manifest) as f:
         cases = json.load(f)

@@ -16,12 +16,20 @@ Windows shells (cmd, PowerShell, Git Bash).
 # 1. Generate the benchmark manifest
 python bench/gen_suite.py --output bench/suites/suite.json
 
-# 2. Run (adjust timeout and RAM cap as needed)
+# 2. Run (adjust timeout, RAM cap, and worker count as needed)
 python bench/run_bench.py \
     --suite bench/suites/suite.json \
     --output bench/results/results.csv \
     --timeout 300 \
     --mem-limit-mb 4096
+
+# Run 3 cases in parallel (--mem-limit-mb is per worker; 3 × 6 GB = 18 GB total):
+python bench/run_bench.py \
+    --suite bench/suites/suite.json \
+    --output bench/results/results.csv \
+    --timeout 300 \
+    --mem-limit-mb 6144 \
+    --workers 3
 
 # If running from a conda env that doesn't have spot, point --python at the
 # Python where spot and prefltlf2pdfa are installed (e.g. system python3):
@@ -29,7 +37,8 @@ python bench/run_bench.py \
     --suite bench/suites/suite.json \
     --output bench/results/results.csv \
     --timeout 300 \
-    --mem-limit-mb 4096 \
+    --mem-limit-mb 6144 \
+    --workers 3 \
     --python /usr/bin/python3
 
 # 3. Analyze — open bench/analyze.ipynb in Jupyter

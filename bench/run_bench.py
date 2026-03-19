@@ -6,7 +6,8 @@ Usage:
         --suite suites/suite.json \
         --output results/results.csv \
         --timeout 300 \
-        --mem-limit-mb 4096
+        --mem-limit-mb 4096 \
+        --workers 3
 
 Supports resuming: skips case_ids already present in --output CSV.
 Log file defaults to <output>.log (e.g. results/results.log).
@@ -18,7 +19,9 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from loguru import logger
@@ -187,6 +190,9 @@ def main():
     parser.add_argument("--output", required=True, help="Path to output CSV.")
     parser.add_argument("--timeout", type=int, default=300, help="Per-case timeout in seconds.")
     parser.add_argument("--mem-limit-mb", type=int, default=4096, help="RAM cap per worker in MB.")
+    parser.add_argument("--workers", type=int, default=1,
+                        help="Number of cases to run in parallel (default: 1). "
+                             "Each worker is an independent subprocess; --mem-limit-mb applies per worker.")
     parser.add_argument("--python", default=None,
                         help="Python executable for worker subprocesses (default: sys.executable). "
                              "Use this when the runner Python differs from the one with spot/prefltlf2pdfa installed, "
@@ -211,33 +217,48 @@ def main():
 
     pending = [c for c in cases if c["case_id"] not in completed]
     total = len(cases)
-    done = len(completed)
+    done_count = len(completed)
 
     logger.info(f"Suite:         {args.suite}")
     logger.info(f"Output:        {args.output}")
-    logger.info(f"Cases:         {total} total, {done} already done, {len(pending)} to run")
-    logger.info(f"Timeout:       {args.timeout}s  |  RAM cap: {args.mem_limit_mb}MB")
+    logger.info(f"Cases:         {total} total, {done_count} already done, {len(pending)} to run")
+    logger.info(f"Timeout:       {args.timeout}s  |  RAM cap: {args.mem_limit_mb}MB/worker")
+    logger.info(f"Workers:       {args.workers} parallel  |  total RAM budget: ~{args.workers * args.mem_limit_mb / 1024:.1f}GB")
     logger.info(f"Worker Python: {args.python or sys.executable}")
     print()
 
-    for i, case in enumerate(pending):
-        label = f"[{done + i + 1}/{total}]"
-        print(f"{label} {case['case_id']} ... ", end="", flush=True)
+    # Shared mutable state accessed from multiple threads
+    finished = done_count          # how many cases are fully done (for progress label)
+    csv_lock = threading.Lock()    # serialises CSV writes and progress prints
+
+    def _run_and_record(case: dict) -> None:
+        nonlocal finished
 
         t_wall = time.perf_counter()
         row = run_case(case, args.suite, args.timeout, args.mem_limit_mb, python=args.python)
         wall = time.perf_counter() - t_wall
 
-        append_row(args.output, row)
+        with csv_lock:
+            finished += 1
+            label = f"[{finished}/{total}]"
+            append_row(args.output, row)
 
-        status = row["status"]
-        if status == "ok":
-            print(f"ok ({wall:.1f}s)")
-        else:
-            # Print first line of error message inline so failures are visible immediately
-            short = _first_line(row.get("error", "") or "")
-            suffix = f" — {short}" if short else ""
-            print(f"{status} ({wall:.1f}s){suffix}")
+            status = row["status"]
+            if status == "ok":
+                print(f"{label} {case['case_id']} ... ok ({wall:.1f}s)")
+            else:
+                short = _first_line(row.get("error", "") or "")
+                suffix = f" — {short}" if short else ""
+                print(f"{label} {case['case_id']} ... {status} ({wall:.1f}s){suffix}")
+
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        futures = {pool.submit(_run_and_record, case): case for case in pending}
+        for future in as_completed(futures):
+            # Re-raise any unexpected exception from the thread itself
+            # (worker errors are caught inside run_case; this guards against bugs here)
+            exc = future.exception()
+            if exc:
+                logger.error(f"Unexpected thread error for {futures[future]['case_id']}: {exc}")
 
     logger.info(f"Done. Results written to {args.output}")
 
