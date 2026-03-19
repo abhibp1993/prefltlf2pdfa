@@ -25,6 +25,10 @@ import re
 
 import numpy as np
 import spot
+from ltlf2dfa.parser.ltlf import LTLfParser
+
+_LTLF_PARSER = LTLfParser()
+_MAX_RETRIES = 20   # extra seeds to try before giving up on a parameter combination
 
 # ---------------------------------------------------------------------------
 # Parameter space
@@ -104,6 +108,82 @@ def generate_partial_order(n: int, p: float, rng: random.Random) -> list:
 
 
 # ---------------------------------------------------------------------------
+# Spec string builder
+# ---------------------------------------------------------------------------
+
+def build_spec_string(formulas: list, partial_order: list) -> str:
+    """Build the prefltlf spec string from formula strings and partial order edges."""
+    n = len(formulas)
+    lines = [f"prefltlf {n}", ""]
+    for f in formulas:
+        lines.append(f)
+    lines.append("")
+    for i, j in partial_order:
+        lines.append(f">=, {i}, {j}")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Consistency validation
+# ---------------------------------------------------------------------------
+
+def is_consistent(formulas: list, partial_order: list) -> tuple:
+    """
+    Return (True, "") if the spec is consistent, else (False, reason_string).
+
+    Consistency checks (no MONA required):
+      1. Every formula is syntactically valid LTLf (lark parse).
+      2. No two formulas are identical strings (duplicate formulas lead to
+         ambiguous preference relations).
+      3. The preference relation contains no contradictions:
+           - no cycle  (i >= j AND j >= i AND i != j with strict resolution)
+           - no pair in both weak-preference and incomparable
+         Note: with our upper-triangle generator (only ">=" edges, no "<>"),
+         the relation is always structurally consistent; this check catches
+         any future generator changes.
+    """
+    # Check 1: syntactic validity of each formula
+    for f in formulas:
+        try:
+            _LTLF_PARSER(f)
+        except Exception as exc:
+            return False, f"formula parse error '{f}': {exc}"
+
+    # Check 2: no duplicate formulas
+    if len(set(formulas)) < len(formulas):
+        seen, dups = set(), []
+        for f in formulas:
+            if f in seen:
+                dups.append(f)
+            seen.add(f)
+        return False, f"duplicate formulas: {dups}"
+
+    # Check 3: no cycles in the preference relation
+    # Build adjacency for the given >= edges.
+    # A cycle exists if i >= j AND j >= i (after any transitive chain).
+    n = len(formulas)
+    # reachable[i] = set of j reachable from i via >= edges
+    reachable = {i: set() for i in range(n)}
+    for i, j in partial_order:
+        reachable[i].add(j)
+    # Transitive closure (small n, simple BFS)
+    changed = True
+    while changed:
+        changed = False
+        for i in range(n):
+            for mid in list(reachable[i]):
+                new = reachable[mid] - reachable[i]
+                if new:
+                    reachable[i] |= new
+                    changed = True
+    for i in range(n):
+        if i in reachable[i]:
+            return False, f"cyclic preference: formula {i} is reachable from itself"
+
+    return True, ""
+
+
+# ---------------------------------------------------------------------------
 # Case ID
 # ---------------------------------------------------------------------------
 
@@ -118,28 +198,49 @@ def make_case_id(n, num_aps, formula_size, density, seed):
 def generate_suite() -> list:
     cases = []
     seen_ids = set()
+    skipped = 0
 
-    def add_case(n, num_aps, formula_size, density_label, density_p, seed):
-        case_id = make_case_id(n, num_aps, formula_size, density_label, seed)
+    def add_case(n, num_aps, formula_size, density_label, density_p, nominal_seed):
+        """
+        Try to generate a consistent case for (n, num_aps, formula_size, density, nominal_seed).
+        If the nominal seed produces an inconsistent spec, try up to _MAX_RETRIES additional
+        seeds. The stored seed is always the nominal seed so the case_id is deterministic;
+        the actual generation seed used is recorded in the case dict.
+        """
+        nonlocal skipped
+        case_id = make_case_id(n, num_aps, formula_size, density_label, nominal_seed)
         if case_id in seen_ids:
             return
         seen_ids.add(case_id)
 
-        rng = random.Random(seed)
-        formulas = generate_formulas(n, num_aps, formula_size, seed)
-        partial_order = generate_partial_order(n, density_p, rng)
+        for attempt in range(_MAX_RETRIES + 1):
+            actual_seed = nominal_seed + attempt * 1000   # shift seed on retry
+            rng = random.Random(actual_seed)
+            formulas = generate_formulas(n, num_aps, formula_size, actual_seed)
+            partial_order = generate_partial_order(n, density_p, rng)
 
-        cases.append({
-            "case_id": case_id,
-            "n": n,
-            "num_aps": num_aps,
-            "formula_size": formula_size,
-            "density": density_label,
-            "density_p": density_p,
-            "seed": seed,
-            "formulas": formulas,
-            "partial_order": partial_order,
-        })
+            ok, reason = is_consistent(formulas, partial_order)
+            if ok:
+                cases.append({
+                    "case_id": case_id,
+                    "n": n,
+                    "num_aps": num_aps,
+                    "formula_size": formula_size,
+                    "density": density_label,
+                    "density_p": density_p,
+                    "seed": nominal_seed,
+                    "actual_seed": actual_seed,
+                    "formulas": formulas,
+                    "partial_order": partial_order,
+                })
+                if attempt > 0:
+                    print(f"  [retry {attempt}] {case_id} — consistent on seed {actual_seed}")
+                return
+
+            print(f"  [skip {attempt+1}/{_MAX_RETRIES+1}] {case_id}: {reason}")
+
+        print(f"  [GIVE UP] {case_id}: no consistent spec found after {_MAX_RETRIES+1} attempts")
+        skipped += 1
 
     # Sweep n (hold num_aps, formula_size at baseline; vary density)
     for n in N_VALUES:
@@ -162,6 +263,8 @@ def generate_suite() -> list:
                 add_case(BASELINE["n"], BASELINE["num_aps"], formula_size,
                          density_label, density_p, seed)
 
+    if skipped:
+        print(f"  WARNING: {skipped} parameter combinations skipped (no consistent spec found).")
     return cases
 
 
@@ -176,7 +279,8 @@ def main():
 
     print("Generating benchmark suite...")
     cases = generate_suite()
-    print(f"  {len(cases)} cases generated.")
+    retried = sum(1 for c in cases if c.get("actual_seed") != c["seed"])
+    print(f"  {len(cases)} cases generated ({retried} needed seed retry).")
 
     with open(args.output, "w") as f:
         json.dump(cases, f, indent=2)
